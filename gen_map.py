@@ -105,6 +105,14 @@ for (a, b) in vor.ridge_points:
     if a < N and b < N:
         adj[a].add(int(b)); adj[b].add(int(a))
 
+# ---------- segmentos de COSTA: ridges entre una celda interior y una de tampón ----------
+coast_segs = []
+for (p1, p2), (v1, v2) in zip(vor.ridge_points, vor.ridge_vertices):
+    if v1 < 0 or v2 < 0:
+        continue
+    if (p1 < N) != (p2 < N):   # uno interior, otro tampón => borde de la masa terrestre
+        coast_segs.append((vor.vertices[v1], vor.vertices[v2]))
+
 # conectividad (BFS)
 seen = set([0]); stack=[0]
 while stack:
@@ -154,7 +162,8 @@ for a in caps:
         if a!=b: assert b not in adj[a], "capitales adyacentes"
 
 out = {"viewBox": f"0 0 {W:.0f} {H:.0f}", "w": round(W), "h": round(H),
-       "regions": regions, "capitals": [int(c) for c in caps]}
+       "regions": regions, "capitals": [int(c) for c in caps],
+       "coast": " ".join(f"M{sx(a[0]):.1f} {sy(a[1]):.1f}L{sx(b[0]):.1f} {sy(b[1]):.1f}" for a, b in coast_segs)}
 with open("/home/claude/repo/map.json","w") as f:
     json.dump(out, f, separators=(",",":"))
 
