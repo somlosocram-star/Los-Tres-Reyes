@@ -1,0 +1,710 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0b0b0c">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Los Tres Reyes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="description" content="Los Tres Reyes — conquista territorial por turnos. Tres reyes, un solo reino.">
+<title>Los Tres Reyes · Conquista</title>
+<script>
+  (function () {
+    try { if (localStorage.getItem('reyes_theme') === 'light') document.documentElement.classList.add('pre-light'); } catch (e) {}
+  })();
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,700;1,500;1,700&family=IBM+Plex+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0b0b0c; --panel:#141416; --panel-2:#1b1b1f; --line:#2c2c30;
+  --text:#f4f4f2; --muted:#76767c; --accent:#f4f4f2; --on-accent:#0b0b0c;
+  --grain-opacity:.45; --vignette:rgba(0,0,0,.5);
+  --map-bg:#101013; --ink:#f4f4f2;
+  --own-w:#dcdbd4; --own-b:#26262b; --neutral-stroke:#5a5a60;
+}
+body.light, html.pre-light body{
+  --bg:#f3f2ee; --panel:#e7e6df; --panel-2:#eeede7; --line:#d2d0c6;
+  --text:#17171a; --muted:#8c8b81; --accent:#17171a; --on-accent:#f3f2ee;
+  --grain-opacity:.16; --vignette:rgba(60,58,50,.10);
+  --map-bg:#eae7dd; --ink:#17171a;
+  --own-w:#fcfcf8; --own-b:#3b3b41; --neutral-stroke:#b3b1a4;
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+html,body{height:100%;overflow:hidden;}
+body{
+  background:var(--bg); color:var(--text); font-family:'Cormorant Garamond',serif;
+  background-image:radial-gradient(ellipse 80% 50% at 50% 0%,rgba(255,255,255,.05) 0%,transparent 62%),radial-gradient(ellipse 60% 80% at 50% 100%,rgba(255,255,255,.03) 0%,transparent 62%);
+  position:relative; overscroll-behavior:none; -webkit-user-select:none; user-select:none;
+  transition:background-color .4s ease,color .4s ease;
+}
+body.light{background-image:radial-gradient(ellipse 80% 50% at 50% 0%,rgba(0,0,0,.04) 0%,transparent 62%),radial-gradient(ellipse 60% 80% at 50% 100%,rgba(0,0,0,.03) 0%,transparent 62%);}
+body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:1;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.06 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  opacity:var(--grain-opacity);mix-blend-mode:overlay;}
+body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:1;background:radial-gradient(ellipse at center,transparent 52%,var(--vignette) 100%);}
+.mono{font-family:'IBM Plex Mono',monospace;font-feature-settings:"tnum";}
+button{font-family:inherit;color:inherit;cursor:pointer;}
+
+/* ---- toggles flotantes ---- */
+#theme-toggle{position:fixed;top:max(.8rem,env(safe-area-inset-top));right:1rem;z-index:600;width:52px;height:28px;border-radius:14px;border:1px solid var(--line);background:var(--panel);padding:0;display:flex;align-items:center;box-shadow:inset 0 1px 3px rgba(0,0,0,.3);}
+#theme-toggle .knob{position:absolute;width:22px;height:22px;border-radius:50%;left:2px;background:radial-gradient(circle at 35% 30%,#fff,#cfcfcf 70%,#9a9a9a);box-shadow:0 1px 4px rgba(0,0,0,.4);transition:transform .3s cubic-bezier(.2,.9,.3,1);display:flex;align-items:center;justify-content:center;font-size:.65rem;}
+#theme-toggle .knob::after{content:'☾';color:#1a1a1a;}
+body.light #theme-toggle .knob{transform:translateX(24px);background:radial-gradient(circle at 35% 30%,#3a3a3a,#1a1a1a 70%,#000);}
+body.light #theme-toggle .knob::after{content:'☀';color:#f3f2ee;}
+#sound-toggle{position:fixed;top:max(.8rem,env(safe-area-inset-top));right:4.4rem;z-index:600;width:34px;height:28px;border-radius:8px;border:1px solid var(--line);background:var(--panel);display:flex;align-items:center;justify-content:center;font-size:.9rem;}
+
+/* ---- sello ---- */
+.seal{width:62px;height:62px;border-radius:50%;border:1px solid var(--accent);display:flex;align-items:center;justify-content:center;position:relative;box-shadow:inset 0 0 20px rgba(255,255,255,.06);flex-shrink:0;}
+body.light .seal{box-shadow:inset 0 0 20px rgba(0,0,0,.05);}
+.seal::after{content:'';position:absolute;border-radius:50%;border:1px dotted var(--muted);inset:-8px;opacity:.5;animation:ringSpin 12s linear infinite;}
+.seal svg{width:36px;height:36px;color:var(--accent);}
+@keyframes ringSpin{to{transform:rotate(360deg);}}
+@keyframes sealMint{0%{opacity:0;transform:scale(.3) rotateY(180deg);}60%{opacity:1;transform:scale(1.08);}100%{opacity:1;transform:scale(1);}}
+@keyframes glyphDrop{0%{opacity:0;transform:translateY(-12px) scale(.6);}100%{opacity:1;transform:none;}}
+
+/* ---- splash ---- */
+#app-splash{position:fixed;inset:0;z-index:1000;background:var(--bg);display:flex;align-items:center;justify-content:center;transition:opacity .6s ease;}
+html.pre-light #app-splash{background:#f3f2ee;}
+#app-splash.hiding{opacity:0;pointer-events:none;}
+.splash-seal{width:148px;height:148px;border-radius:50%;border:1px solid var(--accent);display:flex;align-items:center;justify-content:center;position:relative;box-shadow:inset 0 0 40px rgba(255,255,255,.08),0 0 80px rgba(255,255,255,.06);animation:sealMint 1.1s cubic-bezier(.2,.9,.3,1) both;overflow:hidden;}
+body.light .splash-seal{box-shadow:inset 0 0 40px rgba(0,0,0,.06),0 0 80px rgba(0,0,0,.05);}
+.splash-seal::after{content:'';position:absolute;border-radius:50%;border:1px dotted var(--muted);inset:-14px;animation:ringSpin 9s linear infinite;opacity:.6;}
+.splash-seal svg{width:76px;height:76px;color:var(--accent);animation:glyphDrop .7s cubic-bezier(.3,1.4,.5,1) both;animation-delay:.4s;}
+
+/* ---- pantallas ---- */
+.screen{position:fixed;inset:0;z-index:10;display:none;flex-direction:column;align-items:center;}
+.screen.active{display:flex;}
+.center{justify-content:center;padding:2rem 1.4rem;text-align:center;}
+h1.title{font-size:clamp(2.6rem,12vw,3.6rem);font-weight:700;letter-spacing:.01em;line-height:.95;margin:1.1rem 0 .2rem;}
+.tagline{font-family:'IBM Plex Mono',monospace;font-size:.7rem;letter-spacing:.34em;text-transform:uppercase;color:var(--muted);margin-bottom:2rem;}
+.btn{display:block;width:min(320px,82vw);margin:.5rem auto;padding:.9rem 1.2rem;border:1px solid var(--line);border-radius:2px;background:var(--panel);font-size:1.3rem;font-weight:500;letter-spacing:.02em;transition:transform .12s,border-color .2s,background .2s;}
+.btn:active{transform:scale(.97);}
+.btn.primary{background:var(--accent);color:var(--on-accent);border-color:var(--accent);}
+.btn.ghost{background:transparent;}
+.btn:disabled{opacity:.4;}
+.btn .sub{display:block;font-family:'IBM Plex Mono',monospace;font-size:.62rem;letter-spacing:.22em;text-transform:uppercase;color:var(--muted);margin-top:.25rem;}
+.btn.primary .sub{color:var(--on-accent);opacity:.7;}
+.version{position:fixed;bottom:max(.7rem,env(safe-area-inset-bottom));left:0;right:0;text-align:center;font-family:'IBM Plex Mono',monospace;font-size:.6rem;letter-spacing:.25em;color:var(--muted);z-index:11;}
+
+/* ---- juego: HUD ---- */
+#screen-game{display:none;}
+#screen-game.active{display:block;}
+#topbar{position:fixed;top:0;left:0;right:0;height:calc(48px + env(safe-area-inset-top));padding-top:env(safe-area-inset-top);z-index:40;display:flex;align-items:center;gap:.5rem;padding-left:.7rem;padding-right:7.6rem;background:linear-gradient(var(--bg),rgba(0,0,0,0) );}
+#btn-menu{width:38px;height:38px;border:1px solid var(--line);border-radius:6px;background:var(--panel);font-size:1.1rem;line-height:1;}
+#turn-chip{display:flex;align-items:center;gap:.45rem;font-family:'IBM Plex Mono',monospace;font-size:.72rem;letter-spacing:.12em;text-transform:uppercase;border:1px solid var(--line);background:var(--panel);border-radius:20px;padding:.35rem .7rem;}
+#turn-chip .dot{width:14px;height:14px;border-radius:50%;border:1px solid var(--ink);}
+#hud-right{margin-left:auto;display:flex;align-items:center;gap:.7rem;font-family:'IBM Plex Mono',monospace;font-size:.82rem;}
+#gold{display:flex;align-items:center;gap:.25rem;}
+#actions-pips{display:flex;gap:.28rem;}
+#actions-pips .pip{width:11px;height:11px;border-radius:50%;border:1px solid var(--accent);}
+#actions-pips .pip.on{background:var(--accent);}
+
+/* mapa */
+#map-wrap{position:absolute;inset:0;background:var(--map-bg);touch-action:none;overflow:hidden;}
+#map-svg{width:100%;height:100%;display:block;}
+.region{stroke:var(--line);stroke-width:1;fill:var(--map-bg);transition:fill .25s,stroke .15s;cursor:pointer;}
+.region.own-W{fill:var(--own-w);}
+.region.own-B{fill:var(--own-b);}
+.region.own-G{fill:url(#hatchG);}
+.region.neutral{fill:transparent;stroke:var(--neutral-stroke);stroke-dasharray:2 3;}
+.region.g1{stroke-width:1.4;}
+.region.g2{stroke-width:2.4;}
+.region.sel{stroke:var(--accent);stroke-width:3;}
+.region.adj{stroke:var(--accent);stroke-dasharray:5 4;stroke-width:2;}
+.region.dim{opacity:.5;}
+.r-label{font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:700;fill:var(--ink);text-anchor:middle;dominant-baseline:central;pointer-events:none;paint-order:stroke;stroke:var(--map-bg);stroke-width:3px;}
+.r-crown{pointer-events:none;}
+.cap-ring{fill:none;stroke:var(--accent);stroke-width:1.4;stroke-dasharray:1.5 2.5;pointer-events:none;}
+
+/* panel inferior contextual */
+#sheet{position:fixed;left:0;right:0;bottom:0;z-index:45;background:var(--panel);border-top:1px solid var(--line);padding:.9rem 1rem calc(.9rem + env(safe-area-inset-bottom));transform:translateY(110%);transition:transform .28s cubic-bezier(.2,.9,.3,1);box-shadow:0 -8px 30px rgba(0,0,0,.35);}
+#sheet.up{transform:none;}
+.sheet-head{display:flex;align-items:center;gap:.6rem;margin-bottom:.55rem;}
+.sheet-head .owner-dot{width:18px;height:18px;border-radius:50%;border:1px solid var(--ink);flex-shrink:0;}
+.sheet-title{font-size:1.45rem;font-weight:600;line-height:1;}
+.sheet-meta{margin-left:auto;font-family:'IBM Plex Mono',monospace;font-size:.66rem;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);text-align:right;}
+.stats{display:flex;gap:.6rem;margin-bottom:.7rem;}
+.stat{flex:1;border:1px solid var(--line);border-radius:4px;padding:.45rem .3rem;text-align:center;}
+.stat .v{font-family:'IBM Plex Mono',monospace;font-size:1.25rem;font-weight:700;}
+.stat .k{font-family:'IBM Plex Mono',monospace;font-size:.55rem;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);}
+.sheet-actions{display:flex;gap:.5rem;}
+.sheet-actions .btn{flex:1;width:auto;margin:0;padding:.7rem .3rem;font-size:1rem;}
+.sheet-actions .btn .sub{font-size:.55rem;letter-spacing:.14em;}
+.hint{font-family:'IBM Plex Mono',monospace;font-size:.66rem;letter-spacing:.06em;color:var(--muted);text-align:center;padding:.2rem 0 .1rem;}
+
+/* stepper de cantidad */
+.stepper{display:flex;align-items:center;justify-content:center;gap:1rem;margin:.4rem 0 .8rem;}
+.stepper button{width:46px;height:46px;border:1px solid var(--line);border-radius:8px;background:var(--panel-2);font-size:1.6rem;line-height:1;}
+.stepper .num{font-family:'IBM Plex Mono',monospace;font-size:2rem;font-weight:700;min-width:3rem;text-align:center;}
+.stepper .num small{display:block;font-size:.55rem;letter-spacing:.16em;color:var(--muted);text-transform:uppercase;}
+
+#endturn{position:fixed;right:1rem;bottom:calc(1rem + env(safe-area-inset-bottom));z-index:44;border:1px solid var(--accent);background:var(--accent);color:var(--on-accent);border-radius:24px;padding:.7rem 1.1rem;font-family:'IBM Plex Mono',monospace;font-size:.72rem;letter-spacing:.12em;text-transform:uppercase;box-shadow:0 4px 16px rgba(0,0,0,.3);transition:transform .12s,opacity .2s;}
+#endturn:active{transform:scale(.95);}
+#endturn.hidden{opacity:0;pointer-events:none;}
+
+/* toast / log */
+#toast{position:fixed;top:calc(54px + env(safe-area-inset-top));left:50%;transform:translateX(-50%) translateY(-12px);z-index:60;background:var(--panel-2);border:1px solid var(--line);border-radius:6px;padding:.5rem .9rem;font-family:'IBM Plex Mono',monospace;font-size:.72rem;letter-spacing:.04em;opacity:0;transition:opacity .25s,transform .25s;max-width:88vw;text-align:center;pointer-events:none;}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+
+/* cortina de cambio de turno (pass-and-play) */
+#curtain{position:fixed;inset:0;z-index:70;background:var(--bg);display:none;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:2rem;}
+#curtain.show{display:flex;animation:fadeIn .3s ease;}
+@keyframes fadeIn{from{opacity:0;}to{opacity:1;}}
+#curtain .king-name{font-size:2.8rem;font-weight:700;margin:1rem 0 .2rem;}
+#curtain .king-sub{font-family:'IBM Plex Mono',monospace;font-size:.7rem;letter-spacing:.26em;text-transform:uppercase;color:var(--muted);margin-bottom:2rem;}
+#curtain .crown-big{width:80px;height:80px;border-radius:50%;border:1px solid var(--accent);display:flex;align-items:center;justify-content:center;}
+#curtain .crown-big svg{width:46px;height:46px;}
+
+/* overlays (tutorial / fin / setup) */
+.overlay{position:fixed;inset:0;z-index:80;background:rgba(0,0,0,.55);display:none;align-items:center;justify-content:center;padding:1.4rem;}
+body.light .overlay{background:rgba(40,38,32,.4);}
+.overlay.show{display:flex;animation:fadeIn .25s ease;}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:6px;max-width:440px;width:100%;max-height:86vh;overflow:auto;padding:1.4rem 1.3rem;}
+.card h2{font-size:1.9rem;font-weight:700;margin-bottom:.2rem;}
+.card .lead{font-family:'IBM Plex Mono',monospace;font-size:.64rem;letter-spacing:.2em;text-transform:uppercase;color:var(--muted);margin-bottom:1rem;}
+.card p{font-size:1.12rem;line-height:1.5;margin-bottom:.7rem;}
+.card .rule{display:flex;gap:.7rem;margin-bottom:.7rem;align-items:flex-start;}
+.card .rule .ic{flex-shrink:0;width:30px;height:30px;border:1px solid var(--line);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.9rem;}
+#end-card .seal{margin:0 auto 1rem;}
+.kingsel{display:flex;gap:.6rem;justify-content:center;margin:1.2rem 0;}
+.kingsel .opt{flex:1;border:1px solid var(--line);border-radius:6px;padding:1rem .4rem;text-align:center;background:var(--panel-2);transition:border-color .2s,transform .1s;}
+.kingsel .opt:active{transform:scale(.97);}
+.kingsel .opt.on{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent);}
+.kingsel .opt .n{font-size:2.4rem;font-weight:700;line-height:1;}
+.kingsel .opt .l{font-family:'IBM Plex Mono',monospace;font-size:.56rem;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin-top:.3rem;}
+</style>
+</head>
+<body>
+
+<!-- defs SVG -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="ico-crown" viewBox="0 0 64 64">
+      <path fill="currentColor" d="M8 22 L18 34 L32 14 L46 34 L56 22 L52 50 L12 50 Z"/>
+      <rect fill="currentColor" x="12" y="50" width="40" height="6"/>
+    </symbol>
+    <pattern id="hatchG" patternUnits="userSpaceOnUse" width="7" height="7" patternTransform="rotate(45)">
+      <rect width="7" height="7" fill="var(--map-bg)"/>
+      <line x1="0" y1="0" x2="0" y2="7" stroke="var(--ink)" stroke-width="2.4" opacity="0.85"/>
+    </pattern>
+  </defs>
+</svg>
+
+<button id="theme-toggle" aria-label="Tema"><span class="knob"></span></button>
+<button id="sound-toggle" aria-label="Sonido">♪</button>
+
+<!-- SPLASH -->
+<div id="app-splash"><div class="splash-seal"><svg viewBox="0 0 64 64"><use href="#ico-crown"/></svg></div></div>
+
+<!-- MENÚ -->
+<div id="screen-menu" class="screen center active">
+  <div class="seal"><svg><use href="#ico-crown"/></svg></div>
+  <h1 class="title">Los Tres<br>Reyes</h1>
+  <div class="tagline">conquista o muere</div>
+  <button class="btn primary" id="b-local">Partida local<span class="sub">paso y juega · 2–3 reyes</span></button>
+  <button class="btn" id="b-online" disabled>En línea<span class="sub">próximamente · v2</span></button>
+  <button class="btn ghost" id="b-howto">Cómo se juega</button>
+</div>
+
+<!-- JUEGO -->
+<div id="screen-game">
+  <div id="map-wrap"><svg id="map-svg" preserveAspectRatio="xMidYMid meet"></svg></div>
+  <div id="topbar">
+    <button id="btn-menu">☰</button>
+    <div id="turn-chip"><span class="dot" id="turn-dot"></span><span id="turn-name">—</span></div>
+    <div id="hud-right">
+      <span id="gold" class="mono">⛁ <b id="gold-v">0</b></span>
+      <span id="actions-pips"><span class="pip on"></span><span class="pip on"></span><span class="pip on"></span></span>
+    </div>
+  </div>
+  <button id="endturn" class="hidden">Terminar turno ▸</button>
+  <div id="toast"></div>
+</div>
+
+<!-- panel contextual -->
+<div id="sheet">
+  <div class="sheet-head">
+    <span class="owner-dot" id="sh-dot"></span>
+    <span class="sheet-title" id="sh-title">Región</span>
+    <span class="sheet-meta" id="sh-meta"></span>
+  </div>
+  <div id="sh-body"></div>
+</div>
+
+<!-- cortina de turno -->
+<div id="curtain">
+  <div class="crown-big"><svg id="cur-crown" viewBox="0 0 64 64" style="color:var(--accent)"><use href="#ico-crown"/></svg></div>
+  <div class="king-name" id="cur-name">Rey</div>
+  <div class="king-sub" id="cur-sub">tu turno</div>
+  <button class="btn primary" id="cur-go">Comenzar</button>
+</div>
+
+<!-- setup -->
+<div id="setup-overlay" class="overlay">
+  <div class="card">
+    <h2>Partida local</h2>
+    <div class="lead">paso y juega en un dispositivo</div>
+    <p>¿Cuántos reyes luchan por el reino?</p>
+    <div class="kingsel" id="kingsel">
+      <div class="opt on" data-n="2"><div class="n">2</div><div class="l">blanco · negro</div></div>
+      <div class="opt" data-n="3"><div class="n">3</div><div class="l">+ rey gris</div></div>
+    </div>
+    <p class="mono" style="font-size:.78rem;color:var(--muted)" id="setup-note">Con 2 reyes, el tercer trono y sus tierras empiezan neutrales: una capital fuerte en disputa.</p>
+    <button class="btn primary" id="setup-start">Empezar</button>
+    <button class="btn ghost" id="setup-cancel">Cancelar</button>
+  </div>
+</div>
+
+<!-- tutorial -->
+<div id="howto-overlay" class="overlay">
+  <div class="card">
+    <h2>Cómo se juega</h2>
+    <div class="lead">conquista por turnos</div>
+    <p>Tres reyes —<b>blanco</b>, <b>negro</b> y <b>gris</b>— se disputan un reino de 42 regiones. Gana el último trono en pie.</p>
+    <div class="rule"><span class="ic">⛁</span><span>Cada turno cobras <b>impuestos</b>: oro igual a la población total de tus regiones. Sin mantenimiento.</span></div>
+    <div class="rule"><span class="ic">◷</span><span>Tienes <b>3 acciones</b> por turno, combinables: reclutar, mover/atacar o mejorar una región.</span></div>
+    <div class="rule"><span class="ic">⚔</span><span>Atacas a una región <b>adyacente</b>. La defensa efectiva = ejército × bono de grado (Pueblo ×1, Comarca ×1.3, Ciudad ×1.6). Si tu fuerza la supera, conquistas; si no, pierdes el destacamento.</span></div>
+    <div class="rule"><span class="ic">♔</span><span>Toma la <b>capital</b> de un rey y lo eliminas: sus demás tierras se vuelven neutrales, no tuyas.</span></div>
+    <p class="mono" style="font-size:.74rem;color:var(--muted)">Toca una región para ver sus tropas. Pellizca para acercar, arrastra para mover el mapa.</p>
+    <button class="btn primary" id="howto-close">Entendido</button>
+  </div>
+</div>
+
+<!-- fin -->
+<div id="end-overlay" class="overlay">
+  <div class="card center" id="end-card" style="text-align:center">
+    <div class="seal"><svg id="end-crown" style="color:var(--accent)"><use href="#ico-crown"/></svg></div>
+    <h2 id="end-title">Victoria</h2>
+    <div class="lead" id="end-sub">el reino tiene un solo rey</div>
+    <button class="btn primary" id="end-rematch">Revancha</button>
+    <button class="btn ghost" id="end-menu">Menú</button>
+  </div>
+</div>
+
+<div class="version mono" id="version-label">···</div>
+
+<script>
+/* ============================================================
+   LOS TRES REYES — v1 (local, paso y juega)
+   Socram Games · HTML5 vanilla
+   ============================================================ */
+const MAP = {"viewBox":"0 0 800 853","w":800,"h":853,"regions":[{"id":0,"d":"M617.8 360.1 L633.3 369.8 L660.7 405.0 L628.4 460.8 L563.9 467.1 L527.3 415.4 Z","cx":598.1,"cy":418.1,"adj":[4,8,23,35]},{"id":1,"d":"M150.6 253.0 L205.6 219.6 L238.4 239.6 L229.8 317.2 L207.5 330.2 L151.8 300.6 Z","cx":196.4,"cy":274.7,"adj":[16,24,25,26,30,36]},{"id":2,"d":"M100.1 423.9 L113.2 393.5 L193.4 395.3 L213.1 425.1 L156.3 502.2 L100.5 483.6 L98.3 476.3 Z","cx":148.6,"cy":441.2,"adj":[21,24,30,37]},{"id":3,"d":"M341.3 497.2 L395.1 443.9 L445.7 468.8 L460.9 524.1 L418.8 571.7 L368.0 575.5 Z","cx":401.2,"cy":512.6,"adj":[4,9,17,19,31,32]},{"id":4,"d":"M445.7 468.8 L524.7 414.5 L527.3 415.4 L563.9 467.1 L552.3 517.3 L515.4 539.9 L460.9 524.1 Z","cx":507.5,"cy":482.1,"adj":[0,3,8,9,23,27,31]},{"id":5,"d":"M384.4 193.8 L399.1 199.2 L441.2 266.2 L426.4 310.3 L336.0 295.4 L330.5 268.6 Z","cx":387.6,"cy":260.5,"adj":[10,11,15,26,34,41]},{"id":6,"d":"M445.2 691.5 L452.8 687.4 L535.8 736.5 L534.8 752.1 L520.7 785.0 L503.5 802.4 L491.9 808.0 L479.2 809.7 L456.2 805.0 L428.3 787.2 L417.2 773.8 Z","cx":474.9,"cy":754.0,"adj":[20,29,32]},{"id":7,"d":"M176.8 539.3 L242.2 547.9 L267.7 597.2 L246.0 643.9 L160.6 642.9 L140.8 607.5 Z","cx":204.9,"cy":595.8,"adj":[17,18,21,33,37,38]},{"id":8,"d":"M556.9 281.7 L585.8 301.6 L609.5 333.2 L617.8 360.1 L527.3 415.4 L524.7 414.5 L493.5 356.8 Z","cx":554.7,"cy":349.7,"adj":[0,4,11,31]},{"id":9,"d":"M418.8 571.7 L460.9 524.1 L515.4 539.9 L525.2 617.3 L469.6 643.5 Z","cx":477.2,"cy":581.4,"adj":[3,4,27,29,32]},{"id":10,"d":"M296.1 168.0 L382.8 191.4 L384.4 193.8 L330.5 268.6 L272.2 229.4 Z","cx":323.9,"cy":214.0,"adj":[5,13,16,26,34]},{"id":11,"d":"M441.2 266.2 L521.3 235.5 L541.1 254.5 L556.5 280.3 L556.9 281.7 L493.5 356.8 L439.2 339.3 L426.4 310.3 Z","cx":488.9,"cy":295.3,"adj":[5,8,15,31,41]},{"id":12,"d":"M332.5 66.0 L352.9 48.0 L373.0 42.9 L396.2 48.5 L418.8 71.2 L425.3 95.9 L385.1 127.8 L322.6 89.4 Z","cx":376.0,"cy":82.7,"adj":[13,34]},{"id":13,"d":"M285.2 126.8 L312.0 95.0 L322.6 89.4 L385.1 127.8 L382.8 191.4 L296.1 168.0 L281.8 135.7 Z","cx":336.8,"cy":141.9,"adj":[10,12,16,34]},{"id":14,"d":"M616.0 579.2 L616.7 562.2 L662.6 520.6 L667.9 521.0 L722.3 581.5 L708.3 608.7 L672.5 630.5 L664.8 631.1 Z","cx":667.8,"cy":577.7,"adj":[23,27,35,39,40]},{"id":15,"d":"M306.8 339.0 L336.0 295.4 L426.4 310.3 L439.2 339.3 L386.9 411.0 L314.4 374.7 Z","cx":370.7,"cy":347.5,"adj":[5,11,19,26,30,31]},{"id":16,"d":"M194.9 175.6 L201.7 166.4 L239.5 142.3 L281.8 135.7 L296.1 168.0 L272.2 229.4 L238.4 239.6 L205.6 219.6 Z","cx":246.5,"cy":186.4,"adj":[1,10,13,26,36]},{"id":17,"d":"M242.2 547.9 L283.1 485.9 L341.3 497.2 L368.0 575.5 L352.5 594.5 L267.7 597.2 Z","cx":305.7,"cy":547.0,"adj":[3,7,19,21,32,33]},{"id":18,"d":"M160.6 642.9 L246.0 643.9 L263.8 686.4 L214.2 747.9 L143.9 697.8 Z","cx":204.0,"cy":686.0,"adj":[7,22,28,33,38]},{"id":19,"d":"M259.3 437.3 L314.4 374.7 L386.9 411.0 L395.1 443.9 L341.3 497.2 L283.1 485.9 Z","cx":326.9,"cy":439.1,"adj":[3,15,17,21,30,31]},{"id":20,"d":"M322.6 706.3 L362.3 667.4 L445.2 691.5 L417.2 773.8 L389.3 774.8 L342.1 762.7 L333.4 758.0 Z","cx":381.9,"cy":722.4,"adj":[6,22,32,33]},{"id":21,"d":"M213.1 425.1 L259.3 437.3 L283.1 485.9 L242.2 547.9 L176.8 539.3 L156.3 502.2 Z","cx":221.4,"cy":490.0,"adj":[2,7,17,19,30,37]},{"id":22,"d":"M214.2 747.9 L263.8 686.4 L322.6 706.3 L333.4 758.0 L300.5 783.5 L264.4 795.0 L228.5 792.4 L218.3 788.4 Z","cx":272.9,"cy":745.2,"adj":[18,20,28,33]},{"id":23,"d":"M563.9 467.1 L628.4 460.8 L662.6 520.6 L616.7 562.2 L552.3 517.3 Z","cx":605.9,"cy":506.8,"adj":[0,4,14,27,35]},{"id":24,"d":"M99.8 329.3 L151.8 300.6 L207.5 330.2 L193.4 395.3 L113.2 393.5 L103.3 373.8 Z","cx":152.4,"cy":352.5,"adj":[1,2,25,30]},{"id":25,"d":"M79.3 244.4 L100.9 221.4 L150.6 253.0 L151.8 300.6 L99.8 329.3 L96.7 327.1 L72.5 285.3 Z","cx":111.9,"cy":275.5,"adj":[1,24,36]},{"id":26,"d":"M238.4 239.6 L272.2 229.4 L330.5 268.6 L336.0 295.4 L306.8 339.0 L229.8 317.2 Z","cx":279.9,"cy":285.4,"adj":[1,5,10,15,16,30]},{"id":27,"d":"M515.4 539.9 L552.3 517.3 L616.7 562.2 L616.0 579.2 L554.1 628.4 L525.2 617.3 Z","cx":559.8,"cy":572.5,"adj":[4,9,14,23,29,40]},{"id":28,"d":"M102.0 761.8 L93.5 726.1 L143.9 697.8 L214.2 747.9 L218.3 788.4 L204.0 798.9 L180.8 806.6 L153.2 805.6 L124.2 791.3 Z","cx":156.5,"cy":756.7,"adj":[18,22,38]},{"id":29,"d":"M469.6 643.5 L525.2 617.3 L554.1 628.4 L580.2 684.0 L560.7 716.1 L535.8 736.5 L452.8 687.4 Z","cx":519.9,"cy":674.9,"adj":[6,9,27,32,40]},{"id":30,"d":"M207.5 330.2 L229.8 317.2 L306.8 339.0 L314.4 374.7 L259.3 437.3 L213.1 425.1 L193.4 395.3 Z","cx":250.3,"cy":375.1,"adj":[1,2,15,19,21,24,26]},{"id":31,"d":"M439.2 339.3 L493.5 356.8 L524.7 414.5 L445.7 468.8 L395.1 443.9 L386.9 411.0 Z","cx":452.5,"cy":405.0,"adj":[3,4,8,11,15,19]},{"id":32,"d":"M352.5 594.5 L368.0 575.5 L418.8 571.7 L469.6 643.5 L452.8 687.4 L445.2 691.5 L362.3 667.4 Z","cx":407.7,"cy":631.1,"adj":[3,6,9,17,20,29,33]},{"id":33,"d":"M246.0 643.9 L267.7 597.2 L352.5 594.5 L362.3 667.4 L322.6 706.3 L263.8 686.4 Z","cx":306.6,"cy":645.7,"adj":[7,17,18,20,22,32]},{"id":34,"d":"M385.1 127.8 L425.3 95.9 L441.0 101.9 L467.6 132.0 L475.6 164.6 L399.1 199.2 L384.4 193.8 L382.8 191.4 Z","cx":424.0,"cy":148.8,"adj":[5,10,12,13,41]},{"id":35,"d":"M628.4 460.8 L660.7 405.0 L661.7 405.1 L705.8 427.7 L728.2 467.4 L727.4 479.5 L667.9 521.0 L662.6 520.6 Z","cx":677.1,"cy":462.9,"adj":[0,14,23,39]},{"id":36,"d":"M108.7 195.7 L128.9 175.6 L161.5 167.4 L194.9 175.6 L205.6 219.6 L150.6 253.0 L100.9 221.4 L100.7 219.1 Z","cx":154.5,"cy":207.4,"adj":[1,16,25]},{"id":37,"d":"M69.5 515.0 L100.5 483.6 L156.3 502.2 L176.8 539.3 L140.8 607.5 L58.8 597.2 L54.6 556.7 Z","cx":112.8,"cy":548.7,"adj":[2,7,21,38]},{"id":38,"d":"M42.9 634.0 L57.0 599.1 L58.8 597.2 L140.8 607.5 L160.6 642.9 L143.9 697.8 L93.5 726.1 L89.0 724.4 L60.4 701.0 L44.2 669.5 Z","cx":98.7,"cy":656.5,"adj":[7,18,28,37]},{"id":39,"d":"M667.9 521.0 L727.4 479.5 L753.8 504.4 L757.1 546.4 L731.5 578.2 L722.3 581.5 Z","cx":720.0,"cy":529.2,"adj":[14,35]},{"id":40,"d":"M554.1 628.4 L616.0 579.2 L664.8 631.1 L641.0 663.8 L597.2 683.3 L580.2 684.0 Z","cx":608.1,"cy":635.3,"adj":[14,27,29]},{"id":41,"d":"M399.1 199.2 L475.6 164.6 L484.2 169.6 L508.2 198.5 L521.0 232.5 L521.3 235.5 L441.2 266.2 Z","cx":462.3,"cy":215.1,"adj":[5,11,34]}],"capitals":[20,24,8]};
+
+/* ---------- parámetros de balance (todo ajustable) ---------- */
+const P = {
+  ORO_INICIAL: 10,
+  ACCIONES: 3,
+  POB_MAX:   [5, 10, 18],     // Pueblo, Comarca, Ciudad
+  CREC:      [1, 1, 2],       // crecimiento de población por turno
+  BONUS:     [1.0, 1.3, 1.6], // bono de defensa por grado
+  COSTE_MEJORA: [8, 16],      // Pueblo→Comarca, Comarca→Ciudad
+  COSTE_RECLUTA: 2,           // oro por soldado
+  CAP_POB: 12, CAP_ARMY: 6,   // capitales iniciales (Ciudad)
+  NEU_POB: 3,  NEU_ARMY: 1,   // neutrales iniciales (Pueblo)
+};
+const GRADO = ['Pueblo','Comarca','Ciudad'];
+const KINGS = { W:{name:'Rey Blanco', fill:'var(--own-w)'}, B:{name:'Rey Negro', fill:'var(--own-b)'}, G:{name:'Rey Gris', fill:'url(#hatchG)'} };
+
+/* ---------- utilidades ---------- */
+const $ = id => document.getElementById(id);
+const ce = (t,c)=>{const e=document.createElementNS('http://www.w3.org/2000/svg',t); if(c)e.setAttribute('class',c); return e;};
+
+/* ---------- audio (SFX sintetizados, sin assets) ---------- */
+const Audio_ = {
+  on: (localStorage.getItem('reyes_sound')!=='off'), ctx:null,
+  ensure(){ if(!this.ctx){ try{ this.ctx=new (window.AudioContext||window.webkitAudioContext)(); }catch(e){} } },
+  blip(freq, dur=0.08, type='sine', vol=0.15){
+    if(!this.on) return; this.ensure(); if(!this.ctx) return;
+    const t=this.ctx.currentTime, o=this.ctx.createOscillator(), g=this.ctx.createGain();
+    o.type=type; o.frequency.value=freq; o.connect(g); g.connect(this.ctx.destination);
+    g.gain.setValueAtTime(vol,t); g.gain.exponentialRampToValueAtTime(0.001,t+dur);
+    o.start(t); o.stop(t+dur);
+  },
+  tap(){ this.blip(420,0.05,'triangle',0.08); },
+  ok(){ this.blip(560,0.07,'sine',0.12); setTimeout(()=>this.blip(740,0.08,'sine',0.12),60); },
+  recruit(){ this.blip(300,0.06,'square',0.07); },
+  win(){ this.blip(420,0.1,'sawtooth',0.12); setTimeout(()=>this.blip(640,0.12,'sawtooth',0.12),90); },
+  lose(){ this.blip(200,0.18,'sawtooth',0.12); },
+  conquer(){ this.blip(330,0.1,'square',0.12); setTimeout(()=>this.blip(495,0.12,'square',0.12),80); setTimeout(()=>this.blip(660,0.16,'square',0.12),170); },
+  victory(){ [523,659,784,1047].forEach((f,i)=>setTimeout(()=>this.blip(f,0.22,'triangle',0.14),i*150)); },
+};
+function setSound(on){ Audio_.on=on; localStorage.setItem('reyes_sound',on?'on':'off'); $('sound-toggle').textContent=on?'♪':'♪̶'; $('sound-toggle').style.opacity=on?1:.45; }
+$('sound-toggle').onclick=()=>{ setSound(!Audio_.on); if(Audio_.on)Audio_.tap(); };
+setSound(Audio_.on);
+
+/* ---------- tema ---------- */
+function setTheme(light){
+  document.body.classList.toggle('light', light);
+  document.documentElement.classList.remove('pre-light');
+  localStorage.setItem('reyes_theme', light?'light':'dark');
+  document.querySelector('meta[name=theme-color]').setAttribute('content', light?'#f3f2ee':'#0b0b0c');
+}
+setTheme(localStorage.getItem('reyes_theme')==='light');
+$('theme-toggle').onclick=()=>{ setTheme(!document.body.classList.contains('light')); Audio_.tap(); };
+
+/* ---------- navegación de pantallas ---------- */
+function showScreen(id){ document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active')); $(id).classList.add('active'); }
+function toast(msg){ const t=$('toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('show'),1700); }
+
+/* ============================================================
+   ESTADO DE JUEGO
+   ============================================================ */
+let G = null; // {regions:[{owner,grade,pop,army}], kings:[], capOf:{}, current, actions, started}
+
+function newGame(numKings){
+  const kings = numKings===3 ? ['W','B','G'] : ['W','B'];
+  const caps = MAP.capitals.slice(); // [c0,c1,c2]
+  const capOf = { W:caps[0], B:caps[1] };
+  if(numKings===3) capOf.G = caps[2];
+  const regions = MAP.regions.map(()=>({owner:null, grade:0, pop:P.NEU_POB, army:P.NEU_ARMY}));
+  // capitales de reyes
+  for(const k of kings){ const r=regions[capOf[k]]; r.owner=k; r.grade=2; r.pop=P.CAP_POB; r.army=P.CAP_ARMY; }
+  // en 2 jugadores: la 3ª capital es Ciudad neutral fuerte
+  if(numKings===2){ const r=regions[caps[2]]; r.owner=null; r.grade=2; r.pop=P.CAP_POB; r.army=P.CAP_ARMY; }
+  G = { regions, kings, capOf, alive:[...kings], current:null, actions:P.ACCIONES, started:false, num:numKings };
+  // empieza un rey al azar
+  G.current = kings[(Math.random()*kings.length)|0];
+  buildMap();
+  startTurn(true);
+  showScreen('screen-game');
+}
+
+function regColor(r){
+  if(r.owner) return KINGS[r.owner].fill;
+  return 'transparent';
+}
+function isCapital(i){ for(const k in G.capOf){ if(G.capOf[k]===i) return true; } return false; }
+
+/* ============================================================
+   RENDER DEL MAPA
+   ============================================================ */
+let svgEls = {}; // id -> {path, label, crown}
+function buildMap(){
+  const svg=$('map-svg'); svg.innerHTML='';
+  svg.setAttribute('viewBox', MAP.viewBox);
+  // re-inyecta defs (pattern) dentro del svg para que herede variables del tema
+  const defs=ce('defs');
+  defs.innerHTML=`<pattern id="hatchG" patternUnits="userSpaceOnUse" width="7" height="7" patternTransform="rotate(45)"><rect width="7" height="7" fill="var(--map-bg)"/><line x1="0" y1="0" x2="0" y2="7" stroke="var(--ink)" stroke-width="2.4" opacity="0.85"/></pattern>`;
+  svg.appendChild(defs);
+  const gZoom=ce('g'); gZoom.setAttribute('id','gzoom'); svg.appendChild(gZoom);
+  svgEls={};
+  MAP.regions.forEach(rd=>{
+    const p=ce('path','region'); p.setAttribute('d',rd.d); p.dataset.id=rd.id;
+    gZoom.appendChild(p);
+    const crown=ce('use','r-crown'); crown.setAttribute('href','#ico-crown');
+    crown.setAttribute('width','15'); crown.setAttribute('height','15');
+    crown.setAttribute('x', rd.cx-7.5); crown.setAttribute('y', rd.cy-20);
+    gZoom.appendChild(crown);
+    const lab=ce('text','r-label'); lab.setAttribute('x',rd.cx); lab.setAttribute('y',rd.cy+3); gZoom.appendChild(lab);
+    if(isCapital(rd.id)){ const cr=ce('circle','cap-ring'); cr.setAttribute('cx',rd.cx); cr.setAttribute('cy',rd.cy); cr.setAttribute('r','17'); gZoom.appendChild(cr); }
+    svgEls[rd.id]={path:p, label:lab, crown};
+  });
+  applyZoom();
+  refreshMap();
+}
+function refreshMap(){
+  MAP.regions.forEach(rd=>{
+    const r=G.regions[rd.id], el=svgEls[rd.id];
+    el.path.setAttribute('class','region '+(r.owner?('own-'+r.owner):'neutral')+' g'+r.grade
+      + (sel===rd.id?' sel':'') + (adjSet.has(rd.id)?' adj':''));
+    el.label.textContent = r.army;
+    // corona: visible solo si hay dueño; color por contraste
+    if(r.owner){ el.crown.style.display=''; el.crown.style.color = r.owner==='B' ? 'var(--own-w)' : 'var(--ink)'; }
+    else el.crown.style.display='none';
+  });
+}
+
+/* ---------- zoom / pan ---------- */
+let zoom={s:1, tx:0, ty:0};
+function applyZoom(){ const g=$('gzoom'); if(g) g.setAttribute('transform',`translate(${zoom.tx} ${zoom.ty}) scale(${zoom.s})`); }
+(function initPanZoom(){
+  const wrap=$('map-wrap'); const pts=new Map(); let last=null, startDist=0, startZoom=null, moved=0, downId=null;
+  function svgPoint(e){ const svg=$('map-svg'); const r=svg.getBoundingClientRect(); const vb=MAP; 
+    const x=(e.clientX-r.left)/r.width*vb.w; const y=(e.clientY-r.top)/r.height*vb.h; return {x,y}; }
+  wrap.addEventListener('pointerdown',e=>{ wrap.setPointerCapture(e.pointerId); pts.set(e.pointerId,{x:e.clientX,y:e.clientY});
+    moved=0; downId = (e.target.classList&&e.target.classList.contains('region'))? +e.target.dataset.id : null;
+    if(pts.size===1){ last={x:e.clientX,y:e.clientY}; }
+    if(pts.size===2){ const a=[...pts.values()]; startDist=Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y); startZoom={...zoom}; }
+  });
+  wrap.addEventListener('pointermove',e=>{ if(!pts.has(e.pointerId))return; pts.set(e.pointerId,{x:e.clientX,y:e.clientY});
+    if(pts.size===2){ const a=[...pts.values()]; const d=Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y);
+      const f=d/startDist; let ns=Math.min(4,Math.max(1,startZoom.s*f)); zoom.s=ns; clampPan(); applyZoom(); moved=99; return; }
+    if(pts.size===1 && last){ const dx=e.clientX-last.x, dy=e.clientY-last.y; moved+=Math.abs(dx)+Math.abs(dy);
+      const r=$('map-svg').getBoundingClientRect(); const sc=MAP.w/r.width;
+      zoom.tx+=dx*sc; zoom.ty+=dy*sc; last={x:e.clientX,y:e.clientY}; clampPan(); applyZoom(); }
+  });
+  function up(e){ if(!pts.has(e.pointerId))return; const wasTap = moved<8 && pts.size===1;
+    pts.delete(e.pointerId); if(pts.size<2)startZoom=null; if(pts.size===0)last=null;
+    if(wasTap){ if(downId!=null) onRegionTap(downId); else deselect(); } }
+  wrap.addEventListener('pointerup',up); wrap.addEventListener('pointercancel',up);
+  function clampPan(){ const maxX=MAP.w*(zoom.s-1), maxY=MAP.h*(zoom.s-1);
+    zoom.tx=Math.min(0,Math.max(-maxX,zoom.tx)); zoom.ty=Math.min(0,Math.max(-maxY,zoom.ty)); }
+})();
+
+/* ============================================================
+   FLUJO DE TURNO
+   ============================================================ */
+let sel=null, adjSet=new Set(), mode='idle'; // idle | sel | target
+
+function startTurn(first){
+  // crecimiento + impuestos del rey activo
+  const k=G.current; let income=0;
+  G.regions.forEach((r,i)=>{ if(r.owner===k){ r.pop=Math.min(P.POB_MAX[r.grade], r.pop+P.CREC[r.grade]); income+=r.pop; } });
+  if(!G._gold) G._gold={}; if(G._gold[k]==null) G._gold[k]=P.ORO_INICIAL;
+  G._gold[k]+=income;
+  G.actions=P.ACCIONES; G.started=true;
+  deselect(); refreshMap(); updateHUD();
+  // cortina de paso de dispositivo
+  showCurtain(k, income);
+}
+function showCurtain(k, income){
+  $('cur-name').textContent=KINGS[k].name;
+  $('cur-sub').textContent = income!=null ? `+${income} oro de impuestos · tu turno` : 'tu turno';
+  $('cur-crown').style.color = k==='B' ? 'var(--muted)' : 'var(--accent)';
+  $('curtain').classList.add('show');
+}
+$('cur-go').onclick=()=>{ $('curtain').classList.remove('show'); Audio_.tap(); };
+
+function updateHUD(){
+  const k=G.current;
+  $('turn-name').textContent=KINGS[k].name;
+  const dot=$('turn-dot'); dot.style.background = k==='G' ? 'transparent' : (k==='W'?'var(--own-w)':'var(--own-b)');
+  dot.style.backgroundImage = k==='G' ? 'repeating-linear-gradient(45deg,var(--ink) 0 2px,transparent 2px 4px)' : 'none';
+  $('gold-v').textContent=G._gold[k];
+  const pips=$('actions-pips').children;
+  for(let i=0;i<3;i++) pips[i].className='pip'+(i<G.actions?' on':'');
+}
+
+function endTurn(){
+  if(checkVictory()) return;
+  // siguiente rey vivo
+  const order=G.kings; let idx=order.indexOf(G.current);
+  for(let n=0;n<order.length;n++){ idx=(idx+1)%order.length; if(G.alive.includes(order[idx])){ G.current=order[idx]; break; } }
+  startTurn(false);
+}
+$('endturn').onclick=()=>{ Audio_.tap(); endTurn(); };
+
+function spendAction(){ G.actions--; updateHUD(); if(G.actions<=0){ toast('Sin acciones · termina el turno'); } }
+
+/* ============================================================
+   SELECCIÓN E INTERACCIÓN
+   ============================================================ */
+function deselect(){ sel=null; adjSet=new Set(); mode='idle'; closeSheet(); refreshMap(); $('endturn').classList.remove('hidden'); }
+
+function onRegionTap(id){
+  Audio_.tap();
+  const r=G.regions[id];
+  if(mode==='target'){
+    if(adjSet.has(id)){ resolveMoveAttack(sel, id); return; }
+    // tocar otra cosa: reseleccionar
+  }
+  sel=id; mode='sel';
+  adjSet = new Set( (G.regions[id].owner===G.current) ? MAP.regions[id].adj : [] );
+  refreshMap(); openSheet(id);
+}
+
+/* ---------- panel inferior ---------- */
+function closeSheet(){ $('sheet').classList.remove('up'); }
+function openSheet(id){
+  const r=G.regions[id];
+  const dot=$('sh-dot');
+  dot.style.background = r.owner ? (r.owner==='W'?'var(--own-w)':r.owner==='B'?'var(--own-b)':'transparent') : 'transparent';
+  dot.style.backgroundImage = r.owner==='G' ? 'repeating-linear-gradient(45deg,var(--ink) 0 2px,transparent 2px 4px)' : 'none';
+  dot.style.borderStyle = r.owner ? 'solid':'dotted';
+  $('sh-title').textContent = isCapital(id) ? (r.owner?KINGS[r.owner].name+' · capital':'Capital neutral') : ('Región '+id);
+  $('sh-meta').textContent = GRADO[r.grade];
+  const mine = r.owner===G.current;
+  const ownerTxt = r.owner ? KINGS[r.owner].name : 'Neutral';
+  let html = `<div class="stats">
+    <div class="stat"><div class="v">${r.army}</div><div class="k">ejército</div></div>
+    <div class="stat"><div class="v">${r.pop}</div><div class="k">población</div></div>
+    <div class="stat"><div class="v">×${P.BONUS[r.grade]}</div><div class="k">defensa</div></div>
+  </div>`;
+  if(mine){
+    const canRecruit = G.actions>0 && r.army<r.pop && G._gold[G.current]>=P.COSTE_RECLUTA;
+    const canUpgrade = G.actions>0 && r.grade<2 && G._gold[G.current]>=P.COSTE_MEJORA[r.grade];
+    const canMove    = G.actions>0 && r.army>1;
+    html += `<div class="sheet-actions">
+      <button class="btn" id="a-recruit" ${canRecruit?'':'disabled'}>Reclutar<span class="sub">${P.COSTE_RECLUTA} oro c/u</span></button>
+      <button class="btn" id="a-move" ${canMove?'':'disabled'}>Mover · atacar<span class="sub">a región vecina</span></button>
+      <button class="btn" id="a-upgrade" ${canUpgrade?'':'disabled'}>Mejorar<span class="sub">${r.grade<2?P.COSTE_MEJORA[r.grade]+' oro':'máx.'}</span></button>
+    </div>`;
+  } else {
+    html += `<div class="hint">${ownerTxt} · selecciona una región tuya adyacente para atacar</div>`;
+  }
+  $('sh-body').innerHTML=html;
+  $('sheet').classList.add('up');
+  if(mine){
+    const rb=$('a-recruit'), mb=$('a-move'), ub=$('a-upgrade');
+    if(rb&&!rb.disabled) rb.onclick=()=>openRecruit(id);
+    if(mb&&!mb.disabled) mb.onclick=()=>enterTargetMode(id);
+    if(ub&&!ub.disabled) ub.onclick=()=>doUpgrade(id);
+  }
+}
+
+/* ---------- reclutar (stepper) ---------- */
+function openRecruit(id){
+  const r=G.regions[id]; const maxByPop=r.pop-r.army; const maxByGold=Math.floor(G._gold[G.current]/P.COSTE_RECLUTA);
+  const max=Math.min(maxByPop,maxByGold); let q=Math.min(1,max)||1;
+  stepperSheet({ title:'Reclutar en región '+id, unit:'soldados', max, val:q,
+    info:()=>`${q*P.COSTE_RECLUTA} oro · ejército ${r.army}→${r.army+q} (tope ${r.pop})`,
+    confirm:(n)=>{ r.army+=n; G._gold[G.current]-=n*P.COSTE_RECLUTA; Audio_.recruit(); spendAction(); toast(`Reclutados ${n} en región ${id}`); afterAction(id); } });
+}
+
+/* ---------- mejorar ---------- */
+function doUpgrade(id){
+  const r=G.regions[id]; const cost=P.COSTE_MEJORA[r.grade];
+  G._gold[G.current]-=cost; r.grade++; Audio_.ok(); spendAction();
+  toast(`Región ${id} → ${GRADO[r.grade]}`); afterAction(id);
+}
+
+/* ---------- modo objetivo (mover/atacar) ---------- */
+function enterTargetMode(id){
+  mode='target'; sel=id; adjSet=new Set(MAP.regions[id].adj);
+  refreshMap(); $('sheet').classList.remove('up');
+  toast('Toca una región vecina resaltada'); Audio_.tap();
+}
+function resolveMoveAttack(from, to){
+  const a=G.regions[from], b=G.regions[to];
+  const maxSend=a.army-1; if(maxSend<1){ toast('Sin tropas para mover'); return; }
+  const friendly = b.owner===G.current;
+  stepperSheet({ title:(friendly?'Reforzar región ':'Atacar región ')+to, unit:'tropas', max:maxSend, val:maxSend,
+    info:()=>{ if(friendly) return `mover · destino ${b.army} (tope ${b.pop})`;
+      const De=Math.ceil(b.army*P.BONUS[b.grade]); return `defensa efectiva ${De} (${b.army}×${P.BONUS[b.grade]})`; },
+    confirm:(n)=>{ if(friendly) reinforce(from,to,n); else combat(from,to,n); } });
+}
+function reinforce(from,to,n){
+  const a=G.regions[from], b=G.regions[to];
+  a.army-=n; b.army=Math.min(b.pop, b.army+n);
+  Audio_.ok(); spendAction(); toast(`Refuerzo: ${n} → región ${to}`); afterAction(to);
+}
+function combat(from,to,n){
+  const a=G.regions[from], b=G.regions[to];
+  const De=Math.ceil(b.army*P.BONUS[b.grade]);
+  a.army-=n;
+  if(n>De){
+    // conquista
+    const survivors=Math.min(b.pop, n-De);
+    const wasCapital=isCapital(to);
+    const loser=b.owner;
+    b.owner=G.current; b.army=survivors; // mantiene grado y pob
+    Audio_.conquer();
+    if(wasCapital && loser){ eliminateKing(loser, to); toast(`¡Capital conquistada! ${KINGS[loser].name} eliminado`); }
+    else toast(`Conquistada región ${to} · ${survivors} ocupan`);
+  } else {
+    // asalto fallido: el destacamento muere, el defensor sufre bajas
+    const dmg=Math.floor(n/P.BONUS[b.grade]); b.army=Math.max(0,b.army-dmg);
+    Audio_.lose(); toast(`Asalto rechazado · defensor −${dmg}`);
+  }
+  spendAction();
+  if(!checkVictory()) afterAction(to);
+}
+function eliminateKing(k, exceptCapital){
+  G.alive=G.alive.filter(x=>x!==k);
+  G.regions.forEach((r,i)=>{ if(r.owner===k && i!==exceptCapital){ r.owner=null; } }); // tierras → neutrales
+}
+function afterAction(focusId){
+  refreshMap(); updateHUD();
+  if(G.actions<=0){ deselect(); }
+  else { // re-abre panel de la región tocada para encadenar acciones
+    if(G.regions[focusId]){ onRegionTap(focusId); }
+  }
+}
+
+/* ---------- stepper genérico en el sheet ---------- */
+function stepperSheet(opt){
+  let q=opt.val||1; const max=opt.max;
+  function render(){
+    $('sh-title').textContent=opt.title; $('sh-meta').textContent='';
+    $('sh-dot').style.background='transparent'; $('sh-dot').style.borderStyle='solid';
+    $('sh-body').innerHTML=`
+      <div class="stepper">
+        <button id="st-minus">−</button>
+        <div class="num">${q}<small>${opt.unit}</small></div>
+        <button id="st-plus">+</button>
+      </div>
+      <div class="hint" id="st-info"></div>
+      <div class="sheet-actions">
+        <button class="btn ghost" id="st-cancel">Cancelar</button>
+        <button class="btn primary" id="st-ok">Confirmar</button>
+      </div>`;
+    $('st-info').textContent=opt.info();
+    $('st-minus').onclick=()=>{ if(q>1){q--;render();Audio_.tap();} };
+    $('st-plus').onclick=()=>{ if(q<max){q++;render();Audio_.tap();} };
+    $('st-cancel').onclick=()=>{ mode='sel'; onRegionTap(sel); };
+    $('st-ok').onclick=()=>{ closeSheet(); opt.confirm(q); };
+  }
+  $('sheet').classList.add('up'); render();
+}
+
+/* ---------- victoria ---------- */
+function checkVictory(){
+  if(G.alive.length<=1){
+    const w=G.alive[0]; endGame(w); return true;
+  }
+  return false;
+}
+function endGame(k){
+  $('endturn').classList.add('hidden'); closeSheet();
+  $('end-title').textContent = '¡'+KINGS[k].name+'!';
+  $('end-sub').textContent = 'el reino tiene un solo trono';
+  $('end-crown').style.color = k==='B' ? 'var(--muted)' : 'var(--accent)';
+  Audio_.victory();
+  setTimeout(()=>$('end-overlay').classList.add('show'),500);
+}
+
+/* ============================================================
+   MENÚ / OVERLAYS
+   ============================================================ */
+let pendingKings=2;
+$('b-local').onclick=()=>{ Audio_.tap(); $('setup-overlay').classList.add('show'); };
+$('b-howto').onclick=()=>{ Audio_.tap(); $('howto-overlay').classList.add('show'); };
+$('howto-close').onclick=()=>$('howto-overlay').classList.remove('show');
+$('kingsel').onclick=e=>{ const o=e.target.closest('.opt'); if(!o)return;
+  document.querySelectorAll('#kingsel .opt').forEach(x=>x.classList.remove('on')); o.classList.add('on');
+  pendingKings=+o.dataset.n;
+  $('setup-note').textContent = pendingKings===2
+    ? 'Con 2 reyes, el tercer trono y sus tierras empiezan neutrales: una capital fuerte en disputa.'
+    : 'Tres reyes en rotación. Tomar una capital elimina a su rey; sus tierras quedan neutrales.';
+  Audio_.tap();
+};
+$('setup-start').onclick=()=>{ Audio_.tap(); $('setup-overlay').classList.remove('show'); newGame(pendingKings); };
+$('setup-cancel').onclick=()=>$('setup-overlay').classList.remove('show');
+function gotoMenu(){ showScreen('screen-menu'); $('curtain').classList.remove('show'); $('endturn').classList.add('hidden'); closeSheet(); }
+$('btn-menu').onclick=()=>{ if(confirm('¿Abandonar la partida y volver al menú?')){ gotoMenu(); } };
+$('end-rematch').onclick=()=>{ $('end-overlay').classList.remove('show'); newGame(G.num); };
+$('end-menu').onclick=()=>{ $('end-overlay').classList.remove('show'); gotoMenu(); };
+
+/* ============================================================
+   SPLASH + VERSIÓN (leída de la caché del SW)
+   ============================================================ */
+window.addEventListener('load', ()=>{
+  setTimeout(()=>{ const s=$('app-splash'); s.classList.add('hiding'); setTimeout(()=>s.style.display='none',650); }, 1400);
+});
+(async function showVersion(){
+  let v='reyes-v1';
+  try{ if('caches' in window){ const keys=await caches.keys(); const k=keys.find(x=>/^reyes-v/.test(x)); if(k)v=k; } }catch(e){}
+  $('version-label').textContent=v.replace('reyes-','').toUpperCase()+' · SOCRAM GAMES';
+})();
+
+/* ============================================================
+   SERVICE WORKER
+   ============================================================ */
+if('serviceWorker' in navigator){
+  window.addEventListener('load', ()=>{
+    navigator.serviceWorker.register('sw.js').then(reg=>{ try{reg.update();}catch(e){} }).catch(()=>{});
+  });
+  let reloaded=false;
+  navigator.serviceWorker.addEventListener('controllerchange', ()=>{ if(reloaded)return; reloaded=true; location.reload(); });
+}
+</script>
+</body>
+</html>
