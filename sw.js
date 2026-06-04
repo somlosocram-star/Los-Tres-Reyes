@@ -1,6 +1,6 @@
 /* Los Tres Reyes — Service Worker
    Nomenclatura secuencial: reyes-vXX (subir el número en cada entrega). */
-const CACHE = 'reyes-v1';
+const CACHE = 'reyes-v2';
 const ASSETS = [
   './',
   './index.html',

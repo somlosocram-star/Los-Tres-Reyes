@@ -308,7 +308,10 @@ const P = {
   COSTE_MEJORA: [8, 16],      // Pueblo→Comarca, Comarca→Ciudad
   COSTE_RECLUTA: 2,           // oro por soldado
   CAP_POB: 12, CAP_ARMY: 6,   // capitales iniciales (Ciudad)
-  NEU_POB: 3,  NEU_ARMY: 1,   // neutrales iniciales (Pueblo)
+  // población inicial DESIGUAL de las regiones neutrales (escalada por área):
+  NEU_POB_MIN: 2, NEU_POB_MAX: 5,   // rango de población de los pueblos neutrales
+  NEU_COMARCAS: 6,                  // nº de regiones neutrales que empiezan como Comarca (las mayores)
+  COM_POB_MIN: 6, COM_POB_MAX: 9,   // rango de población de las comarcas neutrales
 };
 const GRADO = ['Pueblo','Comarca','Ciudad'];
 const KINGS = { W:{name:'Rey Blanco', fill:'var(--own-w)'}, B:{name:'Rey Negro', fill:'var(--own-b)'}, G:{name:'Rey Gris', fill:'url(#hatchG)'} };
@@ -359,13 +362,43 @@ function toast(msg){ const t=$('toast'); t.textContent=msg; t.classList.add('sho
    ============================================================ */
 let G = null; // {regions:[{owner,grade,pop,army}], kings:[], capOf:{}, current, actions, started}
 
+/* área de un polígono a partir de su path "M x y L ... Z" (fórmula del cordón) */
+function polyArea(d){
+  const nums=(d.match(/-?\d+(\.\d+)?/g)||[]).map(Number);
+  let A=0; const n=Math.floor(nums.length/2);
+  for(let i=0;i<n;i++){ const x1=nums[2*i],y1=nums[2*i+1], x2=nums[2*((i+1)%n)],y2=nums[2*((i+1)%n)+1]; A+=x1*y2-x2*y1; }
+  return Math.abs(A)/2;
+}
+function regionAreas(){
+  if(MAP._areas) return MAP._areas;
+  return MAP._areas = MAP.regions.map(r=>polyArea(r.d));
+}
+
 function newGame(numKings){
   const kings = numKings===3 ? ['W','B','G'] : ['W','B'];
   const caps = MAP.capitals.slice(); // [c0,c1,c2]
   const capOf = { W:caps[0], B:caps[1] };
   if(numKings===3) capOf.G = caps[2];
-  const regions = MAP.regions.map(()=>({owner:null, grade:0, pop:P.NEU_POB, army:P.NEU_ARMY}));
-  // capitales de reyes
+
+  // --- población DESIGUAL: escalar por área; las regiones mayores son más ricas ---
+  const areas = regionAreas();
+  const capSet = new Set(caps); // las 3 capitales se tratan aparte
+  const villages = MAP.regions.map((r,i)=>i).filter(i=>!capSet.has(i)).sort((a,b)=>areas[b]-areas[a]);
+  const comarcas = new Set(villages.slice(0, P.NEU_COMARCAS)); // las mayores empiezan como Comarca
+  const oa = villages.map(i=>areas[i]);
+  const minA=Math.min(...oa), maxA=Math.max(...oa), span=(maxA-minA)||1;
+  const norm = i => (areas[i]-minA)/span;
+
+  const regions = MAP.regions.map((rd,i)=>{
+    const t=norm(i);
+    if(comarcas.has(i)){
+      const pop=Math.round(P.COM_POB_MIN + t*(P.COM_POB_MAX-P.COM_POB_MIN));
+      return {owner:null, grade:1, pop, army:2 + (t>0.7?1:0)};
+    }
+    const pop=Math.round(P.NEU_POB_MIN + t*(P.NEU_POB_MAX-P.NEU_POB_MIN));
+    return {owner:null, grade:0, pop, army:Math.min(pop, 1 + (t>0.55?1:0))};
+  });
+  // capitales de reyes (Ciudad)
   for(const k of kings){ const r=regions[capOf[k]]; r.owner=k; r.grade=2; r.pop=P.CAP_POB; r.army=P.CAP_ARMY; }
   // en 2 jugadores: la 3ª capital es Ciudad neutral fuerte
   if(numKings===2){ const r=regions[caps[2]]; r.owner=null; r.grade=2; r.pop=P.CAP_POB; r.army=P.CAP_ARMY; }
@@ -423,13 +456,45 @@ function refreshMap(){
 }
 
 /* ---------- zoom / pan ---------- */
-let zoom={s:1, tx:0, ty:0};
+let zoom={s:1, tx:0, ty:0}, zoomRAF=null;
 function applyZoom(){ const g=$('gzoom'); if(g) g.setAttribute('transform',`translate(${zoom.tx} ${zoom.ty}) scale(${zoom.s})`); }
+function clampPan(){ const maxX=MAP.w*(zoom.s-1), maxY=MAP.h*(zoom.s-1);
+  zoom.tx=Math.min(0,Math.max(-maxX,zoom.tx)); zoom.ty=Math.min(0,Math.max(-maxY,zoom.ty)); }
+function cancelZoomAnim(){ if(zoomRAF){ cancelAnimationFrame(zoomRAF); zoomRAF=null; } }
+function animateZoomTo(target, dur=3000){
+  cancelZoomAnim();
+  const from={...zoom}, start=performance.now();
+  const ease=t=> t<0.5 ? 4*t*t*t : 1-Math.pow(-2*t+2,3)/2; // easeInOutCubic
+  function step(now){
+    const p=Math.min(1,(now-start)/dur), e=ease(p);
+    zoom.s = from.s+(target.s-from.s)*e;
+    zoom.tx= from.tx+(target.tx-from.tx)*e;
+    zoom.ty= from.ty+(target.ty-from.ty)*e;
+    clampPan(); applyZoom();
+    zoomRAF = p<1 ? requestAnimationFrame(step) : null;
+  }
+  zoomRAF=requestAnimationFrame(step);
+}
+// encuadre que enmarca las tierras del rey k (más cerca si están concentradas)
+function focusTargetForKing(k){
+  let minx=1e9,miny=1e9,maxx=-1e9,maxy=-1e9,n=0;
+  G.regions.forEach((r,i)=>{ if(r.owner===k){ const c=MAP.regions[i];
+    minx=Math.min(minx,c.cx);maxx=Math.max(maxx,c.cx);miny=Math.min(miny,c.cy);maxy=Math.max(maxy,c.cy); n++; }});
+  if(!n){ const c=MAP.regions[G.capOf[k]]; minx=maxx=c.cx; miny=maxy=c.cy; }
+  const fx=(minx+maxx)/2, fy=(miny+maxy)/2, pad=90;
+  const bw=(maxx-minx)+pad*2, bh=(maxy-miny)+pad*2;
+  let s=Math.min(MAP.w/bw, MAP.h/bh); s=Math.max(1.3, Math.min(2.4, s));
+  return { s, tx:MAP.w/2 - s*fx, ty:MAP.h/2 - s*fy };
+}
+// autozoom: arranca con el mapa entero a la vista y se acerca despacio al rey de turno
+function autoZoomToActive(){
+  zoom={s:1, tx:0, ty:0}; applyZoom();
+  setTimeout(()=>{ if(G && G.current) animateZoomTo(focusTargetForKing(G.current), 3200); }, 280);
+}
 (function initPanZoom(){
   const wrap=$('map-wrap'); const pts=new Map(); let last=null, startDist=0, startZoom=null, moved=0, downId=null;
-  function svgPoint(e){ const svg=$('map-svg'); const r=svg.getBoundingClientRect(); const vb=MAP; 
-    const x=(e.clientX-r.left)/r.width*vb.w; const y=(e.clientY-r.top)/r.height*vb.h; return {x,y}; }
   wrap.addEventListener('pointerdown',e=>{ wrap.setPointerCapture(e.pointerId); pts.set(e.pointerId,{x:e.clientX,y:e.clientY});
+    cancelZoomAnim(); // el jugador interrumpe el autozoom al tocar
     moved=0; downId = (e.target.classList&&e.target.classList.contains('region'))? +e.target.dataset.id : null;
     if(pts.size===1){ last={x:e.clientX,y:e.clientY}; }
     if(pts.size===2){ const a=[...pts.values()]; startDist=Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y); startZoom={...zoom}; }
@@ -445,8 +510,6 @@ function applyZoom(){ const g=$('gzoom'); if(g) g.setAttribute('transform',`tran
     pts.delete(e.pointerId); if(pts.size<2)startZoom=null; if(pts.size===0)last=null;
     if(wasTap){ if(downId!=null) onRegionTap(downId); else deselect(); } }
   wrap.addEventListener('pointerup',up); wrap.addEventListener('pointercancel',up);
-  function clampPan(){ const maxX=MAP.w*(zoom.s-1), maxY=MAP.h*(zoom.s-1);
-    zoom.tx=Math.min(0,Math.max(-maxX,zoom.tx)); zoom.ty=Math.min(0,Math.max(-maxY,zoom.ty)); }
 })();
 
 /* ============================================================
@@ -471,7 +534,7 @@ function showCurtain(k, income){
   $('cur-crown').style.color = k==='B' ? 'var(--muted)' : 'var(--accent)';
   $('curtain').classList.add('show');
 }
-$('cur-go').onclick=()=>{ $('curtain').classList.remove('show'); Audio_.tap(); };
+$('cur-go').onclick=()=>{ $('curtain').classList.remove('show'); Audio_.tap(); autoZoomToActive(); };
 
 function updateHUD(){
   const k=G.current;
@@ -690,7 +753,7 @@ window.addEventListener('load', ()=>{
   setTimeout(()=>{ const s=$('app-splash'); s.classList.add('hiding'); setTimeout(()=>s.style.display='none',650); }, 1400);
 });
 (async function showVersion(){
-  let v='reyes-v1';
+  let v='reyes-v2';
   try{ if('caches' in window){ const keys=await caches.keys(); const k=keys.find(x=>/^reyes-v/.test(x)); if(k)v=k; } }catch(e){}
   $('version-label').textContent=v.replace('reyes-','').toUpperCase()+' · SOCRAM GAMES';
 })();
