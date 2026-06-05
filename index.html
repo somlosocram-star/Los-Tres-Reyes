@@ -21,7 +21,7 @@
 </script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,700;1,500;1,700&family=IBM+Plex+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,700;1,500;1,700&family=Cinzel:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
 :root{
   --bg:#0b0b0c; --panel:#141416; --panel-2:#1b1b1f; --line:#2c2c30;
@@ -119,10 +119,11 @@ body:not(.light) .board-img{filter:brightness(.86) contrast(1.02);} /* atenúa u
 .rf.own-G{fill:url(#hatchG);}
 .rf.neutral{fill:transparent;}
 /* resaltado de selección/adyacencia en rojo de minio (tinta de época), sin dibujar fronteras propias */
-.rb{fill:none;stroke:none;pointer-events:none;transition:stroke .12s;}
+.rb{fill:none;stroke:rgba(35,26,16,0.32);stroke-width:2.5;stroke-linejoin:round;pointer-events:none;transition:stroke .12s,stroke-width .12s;}
 .rb.sel{stroke:#9e2b22;stroke-width:6;stroke-linejoin:round;}
 .rb.adj{stroke:#9e2b22;stroke-width:3.5;stroke-dasharray:10 7;stroke-linejoin:round;opacity:.85;}
 .r-label{font-family:'IBM Plex Mono',monospace;font-size:30px;font-weight:700;fill:#1d1810;text-anchor:middle;dominant-baseline:central;pointer-events:none;paint-order:stroke;stroke:#f3ead2;stroke-width:6px;}
+.r-name{font-family:'Cinzel',serif;font-size:27px;font-weight:600;fill:#2a2016;text-anchor:middle;dominant-baseline:central;pointer-events:none;paint-order:stroke;stroke:#f3ead2;stroke-width:5px;letter-spacing:.5px;}
 .r-crown{pointer-events:none;}
 .cap-ring{fill:none;stroke:#9e2b22;stroke-width:3;stroke-dasharray:4 6;pointer-events:none;opacity:.9;}
 .map-title{font-family:'Cormorant Garamond',serif;font-weight:700;fill:#2a2118;text-anchor:middle;pointer-events:none;letter-spacing:2px;}
@@ -143,6 +144,9 @@ body:not(.light) .board-img{filter:brightness(.86) contrast(1.02);} /* atenúa u
 .sheet-actions .btn{flex:1;width:auto;margin:0;padding:.7rem .3rem;font-size:1rem;}
 .sheet-actions .btn .sub{font-size:.55rem;letter-spacing:.14em;}
 .hint{font-family:'IBM Plex Mono',monospace;font-size:.66rem;letter-spacing:.06em;color:var(--muted);text-align:center;padding:.2rem 0 .1rem;}
+.hint.comp{color:var(--text);opacity:.8;font-size:.7rem;padding-top:0;margin-top:-.2rem;}
+.recruit-list{display:flex;flex-direction:column;gap:.45rem;margin:.2rem 0 .5rem;}
+.recruit-list .btn.troop{width:100%;margin:0;text-align:left;padding:.7rem .9rem;}
 
 /* stepper de cantidad */
 .stepper{display:flex;align-items:center;justify-content:center;gap:1rem;margin:.4rem 0 .8rem;}
@@ -313,7 +317,10 @@ const P = {
   RECLUTA_PCT: 0.5,             // solo se recluta hasta el 50% de la población
   BONUS:     [1.0, 1.3, 1.6],   // bono de defensa por grado
   COSTE_MEJORA: [1200, 3000],   // Pueblo→Comarca, Comarca→Ciudad
-  COSTE_RECLUTA: 5,             // oro por soldado
+  COSTE_INF: 5,                 // infantería: barata, en cualquier región
+  COSTE_ARQ: 25,                // arqueros: en comarcas y ciudades
+  COSTE_CAT: 2000,              // catapultas: solo en ciudades, carísimas
+  CAP_CAT: 8,                   // tope de catapultas por ciudad
   CAP_POB: 1800, CAP_ARMY: 400, // capitales iniciales (Ciudad)
   // población inicial DESIGUAL de las regiones neutrales (escalada por área):
   NEU_POB_MIN: 500, NEU_POB_MAX: 900,   // rango de población de los pueblos neutrales
@@ -321,6 +328,30 @@ const P = {
   COM_POB_MIN: 1000, COM_POB_MAX: 1400, // rango de población de las comarcas neutrales
 };
 const GRADO = ['Pueblo','Comarca','Ciudad'];
+const NOMBRES = ['Marenis','Aurelia','Veldara','Solcrana','Ámbria','Coralis','Drávena','Mistrala','Torvane','Elonar','Selindra','Brenor','Cendara','Valmira','Ossera','Lindara','Nuvelo','Aldenia','Veranor','Tormalis','Esmara','Caldoria','Morante','Siltara','Rúnara','Velmar','Otara','Galdris','Penira','Zarane'];
+const nombreReg = id => NOMBRES[id] || ('Región '+id);
+const TIPOS = { inf:{n:'Infantería',c:'inf'}, arq:{n:'Arqueros',c:'arq'}, cat:{n:'Catapulta',c:'cat'} };
+const costeTipo = t => t==='inf'?P.COSTE_INF : t==='arq'?P.COSTE_ARQ : P.COSTE_CAT;
+const tiposPermitidos = grade => grade>=2 ? ['inf','arq','cat'] : grade>=1 ? ['inf','arq'] : ['inf'];
+function tot(r){ return r.inf+r.arq+r.cat; }   // fuerza total de combate
+function takeProp(r,n){                          // quita n proporcional, devuelve la composición retirada
+  const t=tot(r); if(n>=t){ const c={inf:r.inf,arq:r.arq,cat:r.cat}; r.inf=r.arq=r.cat=0; return c; }
+  const ks=['inf','arq','cat'], ex=ks.map(k=>r[k]*n/t), fl=ex.map(Math.floor);
+  let rem=n-fl.reduce((a,b)=>a+b,0);
+  const ord=ks.map((k,i)=>[i,ex[i]-fl[i]]).sort((a,b)=>b[1]-a[1]);
+  for(let j=0;j<rem;j++) fl[ord[j][0]]++;
+  const c={}; ks.forEach((k,i)=>{ c[k]=Math.min(fl[i],r[k]); r[k]-=c[k]; }); return c;
+}
+function addComp(r,c){ r.inf+=c.inf||0; r.arq+=c.arq||0; r.cat+=c.cat||0; }
+function scaleToTotal(c,target){                 // escala una composición para que sume 'target'
+  const s=(c.inf||0)+(c.arq||0)+(c.cat||0); if(s<=0||target<=0) return {inf:0,arq:0,cat:0};
+  const ks=['inf','arq','cat'], ex=ks.map(k=>(c[k]||0)*target/s), fl=ex.map(Math.floor);
+  let rem=target-fl.reduce((a,b)=>a+b,0);
+  const ord=ks.map((k,i)=>[i,ex[i]-fl[i]]).sort((a,b)=>b[1]-a[1]);
+  for(let j=0;j<rem;j++) fl[ord[j%3][0]]++;
+  const o={}; ks.forEach((k,i)=>o[k]=fl[i]); return o;
+}
+function compTxt(r){ const p=[]; if(r.inf)p.push(`${r.inf} inf`); if(r.arq)p.push(`${r.arq} arq`); if(r.cat)p.push(`${r.cat} cat`); return p.join(' · ')||'sin tropas'; }
 const KINGS = { W:{name:'Rey Blanco', fill:'var(--own-w)'}, B:{name:'Rey Negro', fill:'var(--own-b)'}, G:{name:'Rey Gris', fill:'url(#hatchG)'} };
 
 /* ---------- utilidades ---------- */
@@ -421,15 +452,15 @@ function newGame(numKings){
   const regions = MAP.regions.map((rd,i)=>{
     if(comarcas.has(i)){
       const pop=Math.round(P.COM_POB_MIN + normC(i)*(P.COM_POB_MAX-P.COM_POB_MIN));
-      return {owner:null, grade:1, pop, army:Math.round(pop*0.20)}; // ~20% de la población
+      return {owner:null, grade:1, pop, inf:Math.round(pop*0.20), arq:0, cat:0}; // ~20% de la población
     }
     const pop=Math.round(P.NEU_POB_MIN + normP(i)*(P.NEU_POB_MAX-P.NEU_POB_MIN));
-    return {owner:null, grade:0, pop, army:Math.round(pop*0.16)};   // ~16% de la población
+    return {owner:null, grade:0, pop, inf:Math.round(pop*0.16), arq:0, cat:0};   // ~16% de la población
   });
   // capitales de reyes (Ciudad)
-  for(const k of kings){ const r=regions[capOf[k]]; r.owner=k; r.grade=2; r.pop=P.CAP_POB; r.army=P.CAP_ARMY; }
+  for(const k of kings){ const r=regions[capOf[k]]; r.owner=k; r.grade=2; r.pop=P.CAP_POB; r.inf=P.CAP_ARMY; r.arq=0; r.cat=0; }
   // en 2 jugadores: la 3ª capital es Ciudad neutral fuerte
-  if(numKings===2){ const r=regions[caps[2]]; r.owner=null; r.grade=2; r.pop=P.CAP_POB; r.army=P.CAP_ARMY; }
+  if(numKings===2){ const r=regions[caps[2]]; r.owner=null; r.grade=2; r.pop=P.CAP_POB; r.inf=P.CAP_ARMY; r.arq=0; r.cat=0; }
   G = { regions, kings, capOf, alive:[...kings], current:null, actions:P.ACCIONES, started:false, num:numKings };
   // empieza un rey al azar
   G.current = kings[(Math.random()*kings.length)|0];
@@ -477,13 +508,15 @@ function buildMap(){
   MAP.regions.forEach(rd=>{
     const f=ce('path','rf'); f.setAttribute('d',rd.d); gFills.appendChild(f);
     const b=ce('path','rb'); b.setAttribute('d',rd.d); gInks.appendChild(b);
+    const cap=isCapital(rd.id);
     const crown=ce('use','r-crown'); crown.setAttribute('href','#ico-crown');
     crown.setAttribute('width','38'); crown.setAttribute('height','38');
-    crown.setAttribute('x', rd.cx-19); crown.setAttribute('y', rd.cy-52); gMarks.appendChild(crown);
-    const lab=ce('text','r-label'); lab.setAttribute('x',rd.cx); lab.setAttribute('y',rd.cy+6); gMarks.appendChild(lab);
-    if(isCapital(rd.id)){ const cr=ce('circle','cap-ring'); cr.setAttribute('cx',rd.cx); cr.setAttribute('cy',rd.cy); cr.setAttribute('r','42'); gMarks.appendChild(cr); }
+    crown.setAttribute('x', rd.cx-19); crown.setAttribute('y', rd.cy-78); gMarks.appendChild(crown);
+    const name=ce('text','r-name'); name.setAttribute('x',rd.cx); name.setAttribute('y',rd.cy-30); name.textContent=nombreReg(rd.id); gMarks.appendChild(name);
+    const lab=ce('text','r-label'); lab.setAttribute('x',rd.cx); lab.setAttribute('y',rd.cy+18); gMarks.appendChild(lab);
+    if(cap){ const cr=ce('circle','cap-ring'); cr.setAttribute('cx',rd.cx); cr.setAttribute('cy',rd.cy); cr.setAttribute('r','46'); gMarks.appendChild(cr); }
     const h=ce('path','hit'); h.setAttribute('d',rd.d); h.dataset.id=rd.id; gHit.appendChild(h);
-    svgEls[rd.id]={fill:f, border:b, label:lab, crown};
+    svgEls[rd.id]={fill:f, border:b, label:lab, name, crown, cap};
   });
   // título en el cartucho vacío
   if(MAP.cartouche){
@@ -506,8 +539,10 @@ function refreshMap(){
     const r=G.regions[rd.id], el=svgEls[rd.id];
     el.fill.setAttribute('class','rf '+(r.owner?('own-'+r.owner):'neutral'));
     el.border.setAttribute('class','rb'+(sel===rd.id?' sel':'')+(adjSet.has(rd.id)?' adj':''));
-    el.label.textContent = r.army;
-    if(r.owner){ el.crown.style.display=''; el.crown.style.color = r.owner==='B' ? '#f3ead2' : '#1d1810'; }
+    el.label.textContent = tot(r);
+    el.name.textContent = nombreReg(rd.id);
+    // la corona solo en capitales (trono); el resto se distingue por el tinte
+    if(el.cap){ el.crown.style.display=''; el.crown.style.color = r.owner==='B' ? '#f3ead2' : '#1d1810'; }
     else el.crown.style.display='none';
   });
 }
@@ -641,22 +676,25 @@ function openSheet(id){
   dot.style.background = r.owner ? (r.owner==='W'?'var(--own-w)':r.owner==='B'?'var(--own-b)':'transparent') : 'transparent';
   dot.style.backgroundImage = r.owner==='G' ? 'repeating-linear-gradient(45deg,var(--ink) 0 2px,transparent 2px 4px)' : 'none';
   dot.style.borderStyle = r.owner ? 'solid':'dotted';
-  $('sh-title').textContent = isCapital(id) ? (r.owner?KINGS[r.owner].name+' · capital':'Capital neutral') : ('Región '+id);
-  $('sh-meta').textContent = GRADO[r.grade];
+  $('sh-title').textContent = nombreReg(id) + (isCapital(id)?' · capital':'');
+  $('sh-meta').textContent = (r.owner?KINGS[r.owner].name:'Neutral') + ' · ' + GRADO[r.grade];
   const mine = r.owner===G.current;
   const ownerTxt = r.owner ? KINGS[r.owner].name : 'Neutral';
   let html = `<div class="stats">
-    <div class="stat"><div class="v">${r.army}</div><div class="k">ejército</div></div>
+    <div class="stat"><div class="v">${tot(r)}</div><div class="k">ejército</div></div>
     <div class="stat"><div class="v">${r.pop}</div><div class="k">población</div></div>
     <div class="stat"><div class="v">×${P.BONUS[r.grade]}</div><div class="k">defensa</div></div>
-  </div>`;
+  </div>
+  <div class="hint comp">${compTxt(r)}</div>`;
   if(mine){
     const recCap = Math.floor(r.pop*P.RECLUTA_PCT);
-    const canRecruit = G.actions>0 && r.army<recCap && G._gold[G.current]>=P.COSTE_RECLUTA;
+    const room = recCap-(r.inf+r.arq);
+    const minCoste = Math.min(...tiposPermitidos(r.grade).map(costeTipo));
+    const canRecruit = G.actions>0 && G._gold[G.current]>=minCoste && (room>0 || (r.grade===2 && r.cat<P.CAP_CAT));
     const canUpgrade = G.actions>0 && r.grade<2 && G._gold[G.current]>=P.COSTE_MEJORA[r.grade];
-    const canMove    = G.actions>0 && r.army>1;
+    const canMove    = G.actions>0 && tot(r)>1;
     html += `<div class="sheet-actions">
-      <button class="btn" id="a-recruit" ${canRecruit?'':'disabled'}>Reclutar<span class="sub">${P.COSTE_RECLUTA} oro c/u</span></button>
+      <button class="btn" id="a-recruit" ${canRecruit?'':'disabled'}>Reclutar tropas<span class="sub">según la región</span></button>
       <button class="btn" id="a-move" ${canMove?'':'disabled'}>Mover · atacar<span class="sub">a región vecina</span></button>
       <button class="btn" id="a-upgrade" ${canUpgrade?'':'disabled'}>Mejorar<span class="sub">${r.grade<2?P.COSTE_MEJORA[r.grade]+' oro':'máx.'}</span></button>
     </div>`;
@@ -667,20 +705,40 @@ function openSheet(id){
   $('sheet').classList.add('up');
   if(mine){
     const rb=$('a-recruit'), mb=$('a-move'), ub=$('a-upgrade');
-    if(rb&&!rb.disabled) rb.onclick=()=>openRecruit(id);
+    if(rb&&!rb.disabled) rb.onclick=()=>openRecruitChooser(id);
     if(mb&&!mb.disabled) mb.onclick=()=>enterTargetMode(id);
     if(ub&&!ub.disabled) ub.onclick=()=>doUpgrade(id);
   }
 }
 
-/* ---------- reclutar (stepper) ---------- */
-function openRecruit(id){
-  const r=G.regions[id]; const recCap=Math.floor(r.pop*P.RECLUTA_PCT);
-  const maxByPop=Math.max(0, recCap-r.army); const maxByGold=Math.floor(G._gold[G.current]/P.COSTE_RECLUTA);
-  const max=Math.min(maxByPop,maxByGold); let q=Math.min(1,max)||1;
-  stepperSheet({ title:'Reclutar en región '+id, unit:'soldados', max, val:q,
-    info:(q)=>`coste ${q*P.COSTE_RECLUTA} oro · ejército ${r.army}→${r.army+q} · máx ${recCap} (50% pob.)`,
-    confirm:(n)=>{ r.army+=n; G._gold[G.current]-=n*P.COSTE_RECLUTA; Audio_.recruit(); spendAction(); toast(`Reclutados ${n} en región ${id}`); afterAction(id); } });
+/* ---------- reclutar: elegir tipo (según grado) y luego cantidad ---------- */
+function openRecruitChooser(id){
+  const r=G.regions[id]; const tipos=tiposPermitidos(r.grade);
+  const recCap=Math.floor(r.pop*P.RECLUTA_PCT); const room=recCap-(r.inf+r.arq); const gold=G._gold[G.current];
+  $('sh-title').textContent='Reclutar en '+nombreReg(id);
+  $('sh-meta').textContent=GRADO[r.grade];
+  $('sh-dot').style.background='transparent'; $('sh-dot').style.borderStyle='solid';
+  let html='<div class="recruit-list">';
+  tipos.forEach(t=>{
+    const coste=costeTipo(t);
+    const cap = t==='cat' ? (P.CAP_CAT-r.cat) : room;             // tope: catapultas por ciudad; resto por 50% pob
+    const ok = gold>=coste && cap>0 && G.actions>0;
+    const nota = t==='cat' ? `${coste} oro · máx ${P.CAP_CAT}/ciudad` : `${coste} oro c/u`;
+    html+=`<button class="btn troop" data-t="${t}" ${ok?'':'disabled'}>${TIPOS[t].n}<span class="sub">${nota}</span></button>`;
+  });
+  html+='</div><div class="hint">infantería en cualquier región · arqueros en comarca y ciudad · catapultas solo en ciudad</div>';
+  $('sh-body').innerHTML=html; $('sheet').classList.add('up');
+  $('sh-body').querySelectorAll('button.troop').forEach(btn=>{ if(!btn.disabled) btn.onclick=()=>openRecruitType(id, btn.dataset.t); });
+}
+function openRecruitType(id, t){
+  const r=G.regions[id]; const coste=costeTipo(t);
+  const recCap=Math.floor(r.pop*P.RECLUTA_PCT);
+  const room = t==='cat' ? (P.CAP_CAT-r.cat) : Math.max(0, recCap-(r.inf+r.arq));
+  const max = Math.min(room, Math.floor(G._gold[G.current]/coste));
+  const tope = t==='cat' ? `máx ${P.CAP_CAT}/ciudad` : `máx ${recCap} (50% pob.)`;
+  stepperSheet({ title:`${TIPOS[t].n} en ${nombreReg(id)}`, unit:t==='cat'?'catapultas':'soldados', max, val:0, min:0, confirmMin:1,
+    info:(q)=>`coste ${q*coste} oro · ${TIPOS[t].n.toLowerCase()} ${r[t]}→${r[t]+q} · ${tope}`,
+    confirm:(n)=>{ r[t]+=n; G._gold[G.current]-=n*coste; Audio_.recruit(); spendAction(); toast(`Reclutados ${n} ${TIPOS[t].n.toLowerCase()} en ${nombreReg(id)}`); afterAction(id); } });
 }
 
 /* ---------- mejorar ---------- */
@@ -698,39 +756,38 @@ function enterTargetMode(id){
 }
 function resolveMoveAttack(from, to){
   const a=G.regions[from], b=G.regions[to];
-  const maxSend=a.army-1; if(maxSend<1){ toast('Sin tropas para mover'); return; }
+  const maxSend=tot(a)-1; if(maxSend<1){ toast('Sin tropas para mover'); return; }
   const friendly = b.owner===G.current;
-  stepperSheet({ title:(friendly?'Reforzar región ':'Atacar región ')+to, unit:'tropas', max:maxSend, val:0, min:0, confirmMin:1,
+  stepperSheet({ title:(friendly?'Reforzar ':'Atacar ')+nombreReg(to), unit:'tropas', max:maxSend, val:0, min:0, confirmMin:1,
     info:(q)=>{ if(friendly) return `refuerzo · llegan ${q} (sin pérdidas)`;
-      const muralla=Math.ceil(b.army*P.BONUS[b.grade]);
-      return q>muralla ? `muralla ${muralla} · si vences llegan ${Math.max(0,q-b.army)}`
+      const muralla=Math.ceil(tot(b)*P.BONUS[b.grade]);
+      return q>muralla ? `muralla ${muralla} · si vences llegan ${Math.max(0,q-tot(b))}`
                        : `muralla ${muralla} · ¡insuficiente! asalto fallido`; },
     confirm:(n)=>{ if(friendly) reinforce(from,to,n); else combat(from,to,n); } });
 }
 function reinforce(from,to,n){
   const a=G.regions[from], b=G.regions[to];
-  a.army-=n; b.army+=n;                       // los ejércitos se amontonan libres (sin tope de población)
-  Audio_.ok(); spendAction(); toast(`Refuerzo: ${n} → región ${to}`); afterAction(to);
+  const moved=takeProp(a,n); addComp(b,moved);     // se mueven enteros, sin pérdidas
+  Audio_.ok(); spendAction(); toast(`Refuerzo: ${n} → ${nombreReg(to)}`); afterAction(to);
 }
 function combat(from,to,n){
   const a=G.regions[from], b=G.regions[to];
   const bonus=P.BONUS[b.grade];
-  const muralla=Math.ceil(b.army*bonus);   // hay que superar esto para conquistar
-  const defensores=b.army;                  // bajas reales del atacante = defensores que había
-  a.army-=n;
+  const muralla=Math.ceil(tot(b)*bonus);   // hay que superar esto para conquistar
+  const defensores=tot(b);                  // bajas reales del atacante = defensores que había
+  const sent=takeProp(a,n);                 // sale el destacamento (composición proporcional)
   if(n>muralla){
-    // conquista: pierdes tantos como defensores había; el resto ocupa
-    const survivors=Math.max(0, n-defensores);
-    const wasCapital=isCapital(to);
-    const loser=b.owner;
-    b.owner=G.current; b.army=survivors; // mantiene grado y pob
+    const survN=Math.max(0, n-defensores);
+    const surv=scaleToTotal(sent, survN);
+    const wasCapital=isCapital(to); const loser=b.owner;
+    b.owner=G.current; b.inf=surv.inf; b.arq=surv.arq; b.cat=surv.cat; // ocupan; defensor aniquilado
     Audio_.conquer();
-    if(wasCapital && loser){ eliminateKing(loser, to); toast(`¡Capital conquistada! ${KINGS[loser].name} eliminado`); }
-    else toast(`Conquistada región ${to} · ${survivors} ocupan`);
+    if(wasCapital && loser){ eliminateKing(loser, to); toast(`¡${nombreReg(to)} conquistada! ${KINGS[loser].name} eliminado`); }
+    else toast(`Conquistada ${nombreReg(to)} · ${survN} ocupan`);
   } else {
-    // asalto fallido: el destacamento muere, el defensor sufre bajas proporcionales
-    const dmg=Math.floor(n/bonus); b.army=Math.max(0,b.army-dmg);
-    Audio_.lose(); toast(`Asalto rechazado · defensor −${dmg}`);
+    // asalto fallido: el destacamento muere (sent se descarta); el defensor sufre bajas proporcionales
+    const dmg=Math.floor(n/bonus); takeProp(b, Math.min(dmg, tot(b)));
+    Audio_.lose(); toast(`Asalto rechazado en ${nombreReg(to)} · defensor −${dmg}`);
   }
   spendAction();
   if(!checkVictory()) afterAction(to);
@@ -844,7 +901,7 @@ window.addEventListener('load', ()=>{
   setTimeout(()=>{ const s=$('app-splash'); s.classList.add('hiding'); setTimeout(()=>s.style.display='none',650); }, 1400);
 });
 (async function showVersion(){
-  let v='reyes-v10';
+  let v='reyes-v11';
   try{ if('caches' in window){ const keys=await caches.keys(); const k=keys.find(x=>/^reyes-v/.test(x)); if(k)v=k; } }catch(e){}
   $('version-label').textContent=v.replace('reyes-','').toUpperCase()+' · SOCRAM GAMES';
 })();
