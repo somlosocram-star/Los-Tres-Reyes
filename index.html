@@ -104,10 +104,8 @@ h1.title{font-size:clamp(2.6rem,12vw,3.6rem);font-weight:700;letter-spacing:.01e
 #turn-chip{display:flex;align-items:center;gap:.45rem;font-family:'IBM Plex Mono',monospace;font-size:.72rem;letter-spacing:.12em;text-transform:uppercase;border:1px solid var(--line);background:var(--panel);border-radius:20px;padding:.35rem .7rem;}
 #turn-chip .dot{width:14px;height:14px;border-radius:50%;border:1px solid var(--ink);}
 #hud-right{margin-left:auto;display:flex;align-items:center;gap:.7rem;font-family:'IBM Plex Mono',monospace;font-size:.82rem;}
-#gold{display:flex;align-items:center;gap:.25rem;}
-#actions-pips{display:flex;gap:.28rem;}
-#actions-pips .pip{width:11px;height:11px;border-radius:50%;border:1px solid var(--accent);}
-#actions-pips .pip.on{background:var(--accent);}
+#gold{display:flex;align-items:center;gap:.25rem;color:#e8b53b;font-weight:700;}
+#actions-n{display:flex;align-items:center;gap:.25rem;color:var(--text);opacity:.85;}
 
 /* mapa: lámina de pergamino de Selenia como tablero */
 #map-wrap{position:absolute;inset:0;background:#15120d;touch-action:none;overflow:hidden;}
@@ -124,7 +122,7 @@ body:not(.light) .board-img{filter:brightness(.86) contrast(1.02);} /* atenúa u
 .rb{fill:none;stroke:none;pointer-events:none;transition:stroke .12s;}
 .rb.sel{stroke:#9e2b22;stroke-width:6;stroke-linejoin:round;}
 .rb.adj{stroke:#9e2b22;stroke-width:3.5;stroke-dasharray:10 7;stroke-linejoin:round;opacity:.85;}
-.r-label{font-family:'IBM Plex Mono',monospace;font-size:34px;font-weight:700;fill:#1d1810;text-anchor:middle;dominant-baseline:central;pointer-events:none;paint-order:stroke;stroke:#f3ead2;stroke-width:6px;}
+.r-label{font-family:'IBM Plex Mono',monospace;font-size:30px;font-weight:700;fill:#1d1810;text-anchor:middle;dominant-baseline:central;pointer-events:none;paint-order:stroke;stroke:#f3ead2;stroke-width:6px;}
 .r-crown{pointer-events:none;}
 .cap-ring{fill:none;stroke:#9e2b22;stroke-width:3;stroke-dasharray:4 6;pointer-events:none;opacity:.9;}
 .map-title{font-family:'Cormorant Garamond',serif;font-weight:700;fill:#2a2118;text-anchor:middle;pointer-events:none;letter-spacing:2px;}
@@ -229,7 +227,7 @@ body.light .overlay{background:rgba(40,38,32,.4);}
     <div id="turn-chip"><span class="dot" id="turn-dot"></span><span id="turn-name">—</span></div>
     <div id="hud-right">
       <span id="gold" class="mono">⛁ <b id="gold-v">0</b></span>
-      <span id="actions-pips"><span class="pip on"></span><span class="pip on"></span><span class="pip on"></span></span>
+      <span id="actions-n" class="mono">◷ <b id="act-v">3</b></span>
     </div>
   </div>
   <button id="endturn" class="hidden">Terminar turno ▸</button>
@@ -307,18 +305,19 @@ const MAP = {"w":1536,"h":2752,"img":"selenia.jpg","cartouche":{"cx":768,"cy":37
 
 /* ---------- parámetros de balance (todo ajustable) ---------- */
 const P = {
-  ORO_INICIAL: 10,
+  ORO_INICIAL: 600,
   ACCIONES: 3,
-  POB_MAX:   [5, 10, 18],     // Pueblo, Comarca, Ciudad
-  CREC:      [1, 1, 2],       // crecimiento de población por turno
-  BONUS:     [1.0, 1.3, 1.6], // bono de defensa por grado
-  COSTE_MEJORA: [8, 16],      // Pueblo→Comarca, Comarca→Ciudad
-  COSTE_RECLUTA: 2,           // oro por soldado
-  CAP_POB: 12, CAP_ARMY: 6,   // capitales iniciales (Ciudad)
+  POB_MAX:   [900, 1500, 2400], // tope de población: Pueblo, Comarca, Ciudad
+  CREC:      [25, 40, 70],       // crecimiento de población por turno (hacia el tope)
+  RECLUTA_PCT: 0.5,             // solo se recluta hasta el 50% de la población
+  BONUS:     [1.0, 1.3, 1.6],   // bono de defensa por grado
+  COSTE_MEJORA: [1200, 3000],   // Pueblo→Comarca, Comarca→Ciudad
+  COSTE_RECLUTA: 5,             // oro por soldado
+  CAP_POB: 1800, CAP_ARMY: 400, // capitales iniciales (Ciudad)
   // población inicial DESIGUAL de las regiones neutrales (escalada por área):
-  NEU_POB_MIN: 2, NEU_POB_MAX: 5,   // rango de población de los pueblos neutrales
-  NEU_COMARCAS: 6,                  // nº de regiones neutrales que empiezan como Comarca (las mayores)
-  COM_POB_MIN: 6, COM_POB_MAX: 9,   // rango de población de las comarcas neutrales
+  NEU_POB_MIN: 500, NEU_POB_MAX: 900,   // rango de población de los pueblos neutrales
+  NEU_COMARCAS: 6,                      // nº de regiones neutrales que empiezan como Comarca (las mayores)
+  COM_POB_MIN: 1000, COM_POB_MAX: 1400, // rango de población de las comarcas neutrales
 };
 const GRADO = ['Pueblo','Comarca','Ciudad'];
 const KINGS = { W:{name:'Rey Blanco', fill:'var(--own-w)'}, B:{name:'Rey Negro', fill:'var(--own-b)'}, G:{name:'Rey Gris', fill:'url(#hatchG)'} };
@@ -387,23 +386,23 @@ function newGame(numKings){
   const capOf = { W:caps[0], B:caps[1] };
   if(numKings===3) capOf.G = caps[2];
 
-  // --- población DESIGUAL: escalar por área; las regiones mayores son más ricas ---
+  // --- población DESIGUAL: escalar por área DENTRO de cada grupo ---
   const areas = regionAreas();
   const capSet = new Set(caps); // las 3 capitales se tratan aparte
   const villages = MAP.regions.map((r,i)=>i).filter(i=>!capSet.has(i)).sort((a,b)=>areas[b]-areas[a]);
   const comarcas = new Set(villages.slice(0, P.NEU_COMARCAS)); // las mayores empiezan como Comarca
-  const oa = villages.map(i=>areas[i]);
-  const minA=Math.min(...oa), maxA=Math.max(...oa), span=(maxA-minA)||1;
-  const norm = i => (areas[i]-minA)/span;
+  const puebloIds = villages.filter(i=>!comarcas.has(i));
+  const range = ids => { const a=ids.map(i=>areas[i]); const mn=Math.min(...a),mx=Math.max(...a); return {mn,sp:(mx-mn)||1}; };
+  const rP=range(puebloIds), rC=range([...comarcas]);
+  const normP=i=>(areas[i]-rP.mn)/rP.sp, normC=i=>(areas[i]-rC.mn)/rC.sp;
 
   const regions = MAP.regions.map((rd,i)=>{
-    const t=norm(i);
     if(comarcas.has(i)){
-      const pop=Math.round(P.COM_POB_MIN + t*(P.COM_POB_MAX-P.COM_POB_MIN));
-      return {owner:null, grade:1, pop, army:2 + (t>0.7?1:0)};
+      const pop=Math.round(P.COM_POB_MIN + normC(i)*(P.COM_POB_MAX-P.COM_POB_MIN));
+      return {owner:null, grade:1, pop, army:Math.round(pop*0.20)}; // ~20% de la población
     }
-    const pop=Math.round(P.NEU_POB_MIN + t*(P.NEU_POB_MAX-P.NEU_POB_MIN));
-    return {owner:null, grade:0, pop, army:Math.min(pop, 1 + (t>0.55?1:0))};
+    const pop=Math.round(P.NEU_POB_MIN + normP(i)*(P.NEU_POB_MAX-P.NEU_POB_MIN));
+    return {owner:null, grade:0, pop, army:Math.round(pop*0.16)};   // ~16% de la población
   });
   // capitales de reyes (Ciudad)
   for(const k of kings){ const r=regions[capOf[k]]; r.owner=k; r.grade=2; r.pop=P.CAP_POB; r.army=P.CAP_ARMY; }
@@ -579,8 +578,7 @@ function updateHUD(){
   const dot=$('turn-dot'); dot.style.background = k==='G' ? 'transparent' : (k==='W'?'var(--own-w)':'var(--own-b)');
   dot.style.backgroundImage = k==='G' ? 'repeating-linear-gradient(45deg,var(--ink) 0 2px,transparent 2px 4px)' : 'none';
   $('gold-v').textContent=G._gold[k];
-  const pips=$('actions-pips').children;
-  for(let i=0;i<3;i++) pips[i].className='pip'+(i<G.actions?' on':'');
+  $('act-v').textContent=G.actions;
 }
 
 function endTurn(){
@@ -629,7 +627,8 @@ function openSheet(id){
     <div class="stat"><div class="v">×${P.BONUS[r.grade]}</div><div class="k">defensa</div></div>
   </div>`;
   if(mine){
-    const canRecruit = G.actions>0 && r.army<r.pop && G._gold[G.current]>=P.COSTE_RECLUTA;
+    const recCap = Math.floor(r.pop*P.RECLUTA_PCT);
+    const canRecruit = G.actions>0 && r.army<recCap && G._gold[G.current]>=P.COSTE_RECLUTA;
     const canUpgrade = G.actions>0 && r.grade<2 && G._gold[G.current]>=P.COSTE_MEJORA[r.grade];
     const canMove    = G.actions>0 && r.army>1;
     html += `<div class="sheet-actions">
@@ -652,10 +651,11 @@ function openSheet(id){
 
 /* ---------- reclutar (stepper) ---------- */
 function openRecruit(id){
-  const r=G.regions[id]; const maxByPop=r.pop-r.army; const maxByGold=Math.floor(G._gold[G.current]/P.COSTE_RECLUTA);
+  const r=G.regions[id]; const recCap=Math.floor(r.pop*P.RECLUTA_PCT);
+  const maxByPop=Math.max(0, recCap-r.army); const maxByGold=Math.floor(G._gold[G.current]/P.COSTE_RECLUTA);
   const max=Math.min(maxByPop,maxByGold); let q=Math.min(1,max)||1;
   stepperSheet({ title:'Reclutar en región '+id, unit:'soldados', max, val:q,
-    info:()=>`${q*P.COSTE_RECLUTA} oro · ejército ${r.army}→${r.army+q} (tope ${r.pop})`,
+    info:()=>`${q*P.COSTE_RECLUTA} oro · ejército ${r.army}→${r.army+q} · máx ${recCap} (50% pob.)`,
     confirm:(n)=>{ r.army+=n; G._gold[G.current]-=n*P.COSTE_RECLUTA; Audio_.recruit(); spendAction(); toast(`Reclutados ${n} en región ${id}`); afterAction(id); } });
 }
 
@@ -677,13 +677,13 @@ function resolveMoveAttack(from, to){
   const maxSend=a.army-1; if(maxSend<1){ toast('Sin tropas para mover'); return; }
   const friendly = b.owner===G.current;
   stepperSheet({ title:(friendly?'Reforzar región ':'Atacar región ')+to, unit:'tropas', max:maxSend, val:maxSend,
-    info:()=>{ if(friendly) return `mover · destino ${b.army} (tope ${b.pop})`;
+    info:()=>{ if(friendly) return `refuerzo a región propia · sin pérdidas`;
       const De=Math.ceil(b.army*P.BONUS[b.grade]); return `defensa efectiva ${De} (${b.army}×${P.BONUS[b.grade]})`; },
     confirm:(n)=>{ if(friendly) reinforce(from,to,n); else combat(from,to,n); } });
 }
 function reinforce(from,to,n){
   const a=G.regions[from], b=G.regions[to];
-  a.army-=n; b.army=Math.min(b.pop, b.army+n);
+  a.army-=n; b.army+=n;                       // los ejércitos se amontonan libres (sin tope de población)
   Audio_.ok(); spendAction(); toast(`Refuerzo: ${n} → región ${to}`); afterAction(to);
 }
 function combat(from,to,n){
@@ -691,8 +691,8 @@ function combat(from,to,n){
   const De=Math.ceil(b.army*P.BONUS[b.grade]);
   a.army-=n;
   if(n>De){
-    // conquista
-    const survivors=Math.min(b.pop, n-De);
+    // conquista: ocupan TODOS los supervivientes (sin tope de población)
+    const survivors=n-De;
     const wasCapital=isCapital(to);
     const loser=b.owner;
     b.owner=G.current; b.army=survivors; // mantiene grado y pob
@@ -803,7 +803,7 @@ window.addEventListener('load', ()=>{
   setTimeout(()=>{ const s=$('app-splash'); s.classList.add('hiding'); setTimeout(()=>s.style.display='none',650); }, 1400);
 });
 (async function showVersion(){
-  let v='reyes-v5';
+  let v='reyes-v7';
   try{ if('caches' in window){ const keys=await caches.keys(); const k=keys.find(x=>/^reyes-v/.test(x)); if(k)v=k; } }catch(e){}
   $('version-label').textContent=v.replace('reyes-','').toUpperCase()+' · SOCRAM GAMES';
 })();
