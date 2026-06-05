@@ -108,9 +108,9 @@ h1.title{font-size:clamp(2.6rem,12vw,3.6rem);font-weight:700;letter-spacing:.01e
 #actions-n{display:flex;align-items:center;gap:.25rem;color:var(--text);opacity:.85;}
 
 /* mapa: lámina de pergamino de Selenia como tablero */
-#map-wrap{position:absolute;inset:0;background:#15120d;touch-action:none;overflow:hidden;}
+#map-wrap{position:absolute;inset:0;background:#15120d;touch-action:none;overflow:hidden;-webkit-touch-callout:none;-webkit-user-select:none;user-select:none;}
 #map-svg{width:100%;height:100%;display:block;}
-.board-img{}
+.board-img{pointer-events:none;-webkit-touch-callout:none;-webkit-user-select:none;user-select:none;}
 body:not(.light) .board-img{filter:brightness(.86) contrast(1.02);} /* atenúa un pelín en oscuro */
 /* propiedad = TINTE translúcido sobre el pergamino (se ve el dibujo debajo) */
 .rf{stroke:none;pointer-events:none;transition:fill .25s;}
@@ -346,9 +346,30 @@ const Audio_ = {
   conquer(){ this.blip(330,0.1,'square',0.12); setTimeout(()=>this.blip(495,0.12,'square',0.12),80); setTimeout(()=>this.blip(660,0.16,'square',0.12),170); },
   victory(){ [523,659,784,1047].forEach((f,i)=>setTimeout(()=>this.blip(f,0.22,'triangle',0.14),i*150)); },
 };
-function setSound(on){ Audio_.on=on; localStorage.setItem('reyes_sound',on?'on':'off'); $('sound-toggle').textContent=on?'♪':'♪̶'; $('sound-toggle').style.opacity=on?1:.45; }
+/* ---------- música (MP3): intro en menú + 3 pistas que rotan en juego ---------- */
+const Music = {
+  introSrc:'music-intro.mp3',
+  gameSrc:['music-game-1.mp3','music-game-2.mp3','music-game-3.mp3'],
+  el:null, mode:null, gi:0, started:false, vol:0.5,
+  ensure(){ if(!this.el){ this.el=new Audio(); this.el.preload='auto'; this.el.volume=this.vol;
+      this.el.addEventListener('ended',()=>{ if(this.mode==='game'){ this.gi=(this.gi+1)%this.gameSrc.length; this.el.src=this.gameSrc[this.gi]; this.el.play().catch(()=>{}); } }); }
+    return this.el; },
+  play(mode){ this.mode=mode; this.started=true; if(!Audio_.on) return;
+    const e=this.ensure();
+    if(mode==='intro'){ e.loop=true; e.src=this.introSrc; }
+    else { e.loop=false; this.gi=Math.floor(Math.random()*this.gameSrc.length); e.src=this.gameSrc[this.gi]; }
+    e.play().catch(()=>{}); },
+  pause(){ if(this.el) this.el.pause(); },
+  resume(){ if(!this.mode) return; if(this.el && this.el.src){ this.el.play().catch(()=>{}); } else { this.play(this.mode); } },
+};
+function setSound(on){ Audio_.on=on; localStorage.setItem('reyes_sound',on?'on':'off'); $('sound-toggle').textContent=on?'♪':'♪̶'; $('sound-toggle').style.opacity=on?1:.45; if(on)Music.resume(); else Music.pause(); }
 $('sound-toggle').onclick=()=>{ setSound(!Audio_.on); if(Audio_.on)Audio_.tap(); };
 setSound(Audio_.on);
+
+// arranca al primer toque (autoplay bloqueado hasta que el usuario interactúa)
+function _firstGesture(){ if(!Music.started){ Music.play($('screen-game').classList.contains('active')?'game':'intro'); }
+  window.removeEventListener('pointerdown', _firstGesture); }
+window.addEventListener('pointerdown', _firstGesture);
 
 /* ---------- tema ---------- */
 function setTheme(light){
@@ -415,6 +436,7 @@ function newGame(numKings){
   buildMap();
   startTurn(true);
   showScreen('screen-game');
+  Music.play('game');
 }
 
 function regColor(r){
@@ -446,6 +468,7 @@ function buildMap(){
   img.setAttribute('preserveAspectRatio','none');
   img.setAttributeNS('http://www.w3.org/1999/xlink','href',MAP.img);
   img.setAttribute('href',MAP.img);
+  img.setAttribute('draggable','false');
   gZoom.appendChild(img);
 
   // 2) tintes de propiedad  3) resaltado  4) marcas  5) toque
@@ -677,11 +700,11 @@ function resolveMoveAttack(from, to){
   const a=G.regions[from], b=G.regions[to];
   const maxSend=a.army-1; if(maxSend<1){ toast('Sin tropas para mover'); return; }
   const friendly = b.owner===G.current;
-  stepperSheet({ title:(friendly?'Reforzar región ':'Atacar región ')+to, unit:'tropas', max:maxSend, val:maxSend,
+  stepperSheet({ title:(friendly?'Reforzar región ':'Atacar región ')+to, unit:'tropas', max:maxSend, val:0, min:0, confirmMin:1,
     info:(q)=>{ if(friendly) return `refuerzo · llegan ${q} (sin pérdidas)`;
-      const De=Math.ceil(b.army*P.BONUS[b.grade]);
-      return q>De ? `defensa efectiva ${De} · si vences llegan ${q-De}`
-                  : `defensa efectiva ${De} · ¡insuficiente! asalto fallido`; },
+      const muralla=Math.ceil(b.army*P.BONUS[b.grade]);
+      return q>muralla ? `muralla ${muralla} · si vences llegan ${Math.max(0,q-b.army)}`
+                       : `muralla ${muralla} · ¡insuficiente! asalto fallido`; },
     confirm:(n)=>{ if(friendly) reinforce(from,to,n); else combat(from,to,n); } });
 }
 function reinforce(from,to,n){
@@ -691,11 +714,13 @@ function reinforce(from,to,n){
 }
 function combat(from,to,n){
   const a=G.regions[from], b=G.regions[to];
-  const De=Math.ceil(b.army*P.BONUS[b.grade]);
+  const bonus=P.BONUS[b.grade];
+  const muralla=Math.ceil(b.army*bonus);   // hay que superar esto para conquistar
+  const defensores=b.army;                  // bajas reales del atacante = defensores que había
   a.army-=n;
-  if(n>De){
-    // conquista: ocupan TODOS los supervivientes (sin tope de población)
-    const survivors=n-De;
+  if(n>muralla){
+    // conquista: pierdes tantos como defensores había; el resto ocupa
+    const survivors=Math.max(0, n-defensores);
     const wasCapital=isCapital(to);
     const loser=b.owner;
     b.owner=G.current; b.army=survivors; // mantiene grado y pob
@@ -703,8 +728,8 @@ function combat(from,to,n){
     if(wasCapital && loser){ eliminateKing(loser, to); toast(`¡Capital conquistada! ${KINGS[loser].name} eliminado`); }
     else toast(`Conquistada región ${to} · ${survivors} ocupan`);
   } else {
-    // asalto fallido: el destacamento muere, el defensor sufre bajas
-    const dmg=Math.floor(n/P.BONUS[b.grade]); b.army=Math.max(0,b.army-dmg);
+    // asalto fallido: el destacamento muere, el defensor sufre bajas proporcionales
+    const dmg=Math.floor(n/bonus); b.army=Math.max(0,b.army-dmg);
     Audio_.lose(); toast(`Asalto rechazado · defensor −${dmg}`);
   }
   spendAction();
@@ -755,7 +780,7 @@ function stepperSheet(opt){
   holdRepeat($('st-minus'), s=>setQ(q-s));
   holdRepeat($('st-plus'),  s=>setQ(q+s));
   $('st-cancel').onclick=()=>{ mode='sel'; onRegionTap(sel); };
-  $('st-ok').onclick=()=>{ closeSheet(); opt.confirm(q); };
+  $('st-ok').onclick=()=>{ if(q < (opt.confirmMin||1)){ toast('Elige cuántas tropas'); return; } closeSheet(); opt.confirm(q); };
   $('sheet').classList.add('up');
 }
 
@@ -784,6 +809,8 @@ $('b-howto').onclick=()=>{ Audio_.tap(); $('howto-overlay').classList.add('show'
 $('howto-close').onclick=()=>$('howto-overlay').classList.remove('show');
 
 /* ---------- instalación PWA ---------- */
+// evita el menú nativo de imagen al mantener pulsado (descargar/compartir)
+document.addEventListener('contextmenu', e=>e.preventDefault());
 let deferredPrompt=null;
 window.addEventListener('beforeinstallprompt', e=>{
   e.preventDefault(); deferredPrompt=e;
@@ -805,7 +832,7 @@ $('kingsel').onclick=e=>{ const o=e.target.closest('.opt'); if(!o)return;
 };
 $('setup-start').onclick=()=>{ Audio_.tap(); $('setup-overlay').classList.remove('show'); newGame(pendingKings); };
 $('setup-cancel').onclick=()=>$('setup-overlay').classList.remove('show');
-function gotoMenu(){ showScreen('screen-menu'); $('curtain').classList.remove('show'); $('endturn').classList.add('hidden'); closeSheet(); }
+function gotoMenu(){ showScreen('screen-menu'); $('curtain').classList.remove('show'); $('endturn').classList.add('hidden'); closeSheet(); Music.play('intro'); }
 $('btn-menu').onclick=()=>{ if(confirm('¿Abandonar la partida y volver al menú?')){ gotoMenu(); } };
 $('end-rematch').onclick=()=>{ $('end-overlay').classList.remove('show'); newGame(G.num); };
 $('end-menu').onclick=()=>{ $('end-overlay').classList.remove('show'); gotoMenu(); };
@@ -817,7 +844,7 @@ window.addEventListener('load', ()=>{
   setTimeout(()=>{ const s=$('app-splash'); s.classList.add('hiding'); setTimeout(()=>s.style.display='none',650); }, 1400);
 });
 (async function showVersion(){
-  let v='reyes-v8';
+  let v='reyes-v10';
   try{ if('caches' in window){ const keys=await caches.keys(); const k=keys.find(x=>/^reyes-v/.test(x)); if(k)v=k; } }catch(e){}
   $('version-label').textContent=v.replace('reyes-','').toUpperCase()+' · SOCRAM GAMES';
 })();

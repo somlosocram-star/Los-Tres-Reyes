@@ -1,6 +1,6 @@
 /* Los Tres Reyes — Service Worker
    Nomenclatura secuencial: reyes-vXX (subir el número en cada entrega). */
-const CACHE = 'reyes-v8';
+const CACHE = 'reyes-v10';
 const ASSETS = [
   './',
   './index.html',
@@ -9,7 +9,11 @@ const ASSETS = [
   './icon-512.png',
   './apple-touch-icon.png',
   './favicon-32.png',
-  './selenia.jpg'
+  './selenia.jpg',
+  './music-intro.mp3',
+  './music-game-1.mp3',
+  './music-game-2.mp3',
+  './music-game-3.mp3'
 ];
 
 self.addEventListener('install', e=>{
