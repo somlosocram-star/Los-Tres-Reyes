@@ -121,7 +121,9 @@ body:not(.light) .board-img{filter:brightness(.86) contrast(1.02);} /* atenúa u
 /* resaltado de selección/adyacencia en rojo de minio (tinta de época), sin dibujar fronteras propias */
 .rb{fill:none;stroke:rgba(40,30,20,0.55);stroke-width:2;stroke-linejoin:round;pointer-events:none;transition:stroke .12s,stroke-width .12s;}
 .rb.sel{stroke:#9e2b22;stroke-width:6;stroke-linejoin:round;}
-.rb.adj{stroke:#9e2b22;stroke-width:3.5;stroke-dasharray:10 7;stroke-linejoin:round;opacity:.85;}
+.rb.adj{stroke:#9e2b22;stroke-width:4.5;stroke-dasharray:10 7;stroke-linejoin:round;opacity:.95;}
+.rf.tgt{fill:rgba(158,43,34,.26);animation:tgtPulse 1.1s ease-in-out infinite;}
+@keyframes tgtPulse{0%,100%{fill:rgba(158,43,34,.16);}50%{fill:rgba(158,43,34,.34);}}
 .r-gly{pointer-events:none;}
 .chapita{fill:#14110c;opacity:.9;pointer-events:none;}
 .r-num{font-family:'IBM Plex Mono',monospace;font-size:21px;font-weight:700;fill:#f3ead2;text-anchor:middle;dominant-baseline:central;pointer-events:none;}
@@ -146,6 +148,13 @@ body:not(.light) .board-img{filter:brightness(.86) contrast(1.02);} /* atenúa u
 .sheet-actions{display:flex;gap:.5rem;}
 .sheet-actions .btn{flex:1;width:auto;margin:0;padding:.7rem .3rem;font-size:1rem;}
 .sheet-actions .btn .sub{font-size:.55rem;letter-spacing:.14em;}
+.sheet-actions .actbtn{flex:1;background:none;border:none;padding:0;display:flex;flex-direction:column;align-items:center;gap:.15rem;cursor:pointer;}
+.sheet-actions .actbtn img{width:100%;max-width:118px;aspect-ratio:1/1;object-fit:contain;transition:transform .12s,filter .2s;filter:drop-shadow(0 2px 4px rgba(0,0,0,.45));}
+.sheet-actions .actbtn:active img{transform:scale(.93);}
+.sheet-actions .actbtn[disabled]{pointer-events:none;}
+.sheet-actions .actbtn[disabled] img{filter:grayscale(1) brightness(.55);opacity:.45;}
+.sheet-actions .actbtn .cap{font-family:'IBM Plex Mono',monospace;font-size:.5rem;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);text-align:center;}
+.sheet-actions .actbtn[disabled] .cap{opacity:.5;}
 .hint{font-family:'IBM Plex Mono',monospace;font-size:.66rem;letter-spacing:.06em;color:var(--muted);text-align:center;padding:.2rem 0 .1rem;}
 .hint.comp{color:var(--text);opacity:.8;font-size:.7rem;padding-top:0;margin-top:-.2rem;}
 .recruit-list{display:flex;flex-direction:column;gap:.45rem;margin:.2rem 0 .5rem;}
@@ -231,9 +240,11 @@ body.light .overlay{background:rgba(40,38,32,.4);}
   <div class="seal"><svg><use href="#ico-crown"/></svg></div>
   <h1 class="title">Los Tres<br>Reyes</h1>
   <div class="tagline">conquista o muere</div>
+  <button class="btn primary" id="b-continue" style="display:none">Continuar partida<span class="sub">retomar donde lo dejaste</span></button>
   <button class="btn primary" id="b-local">Partida local<span class="sub">paso y juega · 2–3 reyes</span></button>
   <button class="btn" id="b-online" disabled>En línea<span class="sub">próximamente · v2</span></button>
   <button class="btn ghost" id="b-howto">Cómo se juega</button>
+  <button class="btn ghost" id="b-install" style="display:none">Instalar app<span class="sub">añadir a la pantalla de inicio</span></button>
 </div>
 
 <!-- JUEGO -->
@@ -589,7 +600,7 @@ function buildMap(){
 function refreshMap(){
   MAP.regions.forEach(rd=>{
     const r=G.regions[rd.id], el=svgEls[rd.id], cx=el.cx, cy=el.cy;
-    el.fill.setAttribute('class','rf '+(r.owner?('own-'+r.owner):'neutral'));
+    el.fill.setAttribute('class','rf '+(r.owner?('own-'+r.owner):'neutral')+(mode==='target'&&adjSet.has(rd.id)?' tgt':''));
     el.border.setAttribute('class','rb'+(sel===rd.id?' sel':'')+(adjSet.has(rd.id)?' adj':''));
     // glifo del asentamiento según el grado (centrado en el centroide para no invadir vecinos)
     const g=GLYPH[r.grade], h=GLYPH_H[r.grade], w=h*g.a;
@@ -680,7 +691,7 @@ function startTurn(first){
   if(!G._gold) G._gold={}; if(G._gold[k]==null) G._gold[k]=P.ORO_INICIAL;
   G._gold[k]+=income;
   G.actions=P.ACCIONES; G.started=true;
-  deselect(); refreshMap(); updateHUD();
+  deselect(); refreshMap(); updateHUD(); saveGame();
   // cortina de paso de dispositivo
   showCurtain(k, income);
 }
@@ -696,7 +707,7 @@ function updateHUD(){
   const k=G.current;
   $('turn-name').textContent=KINGS[k].name;
   const dot=$('turn-dot'); dot.style.background = k==='G' ? '#8a8880' : (k==='W'?'var(--own-w)':'#0b0906');
-  dot.style.backgroundImage = k==='G' ? 'repeating-linear-gradient(45deg,var(--ink) 0 2px,transparent 2px 4px)' : 'none';
+  dot.style.backgroundImage = 'none';
   $('gold-v').textContent=G._gold[k];
   $('act-v').textContent=G.actions;
 }
@@ -755,9 +766,9 @@ function openSheet(id){
     const canUpgrade = G.actions>0 && r.grade<2 && G._gold[G.current]>=P.COSTE_MEJORA[r.grade];
     const canMove    = G.actions>0 && tot(r)>1;
     html += `<div class="sheet-actions">
-      <button class="btn" id="a-recruit" ${canRecruit?'':'disabled'}>Reclutar tropas<span class="sub">según la región</span></button>
-      <button class="btn" id="a-move" ${canMove?'':'disabled'}>Mover · atacar<span class="sub">a región vecina</span></button>
-      <button class="btn" id="a-upgrade" ${canUpgrade?'':'disabled'}>Mejorar<span class="sub">${r.grade<2?P.COSTE_MEJORA[r.grade]+' oro':'máx.'}</span></button>
+      <button class="actbtn" id="a-recruit" ${canRecruit?'':'disabled'}><img src="btn_recruit.png" alt="Reclutar tropas"><span class="cap">según la región</span></button>
+      <button class="actbtn" id="a-move" ${canMove?'':'disabled'}><img src="btn_move.png" alt="Mover · atacar"><span class="cap">a región vecina</span></button>
+      <button class="actbtn" id="a-upgrade" ${canUpgrade?'':'disabled'}><img src="btn_upgrade.png" alt="Mejorar"><span class="cap">${r.grade<2?P.COSTE_MEJORA[r.grade]+' oro':'máx.'}</span></button>
     </div>`;
   } else {
     html += `<div class="hint">${ownerTxt} · selecciona una región tuya adyacente para atacar</div>`;
@@ -901,7 +912,7 @@ function eliminateKing(k, exceptCapital){
   G.regions.forEach((r,i)=>{ if(r.owner===k && i!==exceptCapital){ r.owner=null; } }); // tierras → neutrales
 }
 function afterAction(focusId){
-  refreshMap(); updateHUD();
+  refreshMap(); updateHUD(); saveGame();
   if(G.actions<=0){ deselect(); }
   else { // re-abre panel de la región tocada para encadenar acciones
     if(G.regions[focusId]){ onRegionTap(focusId); }
@@ -954,7 +965,7 @@ function checkVictory(){
   return false;
 }
 function endGame(k){
-  $('endturn').classList.add('hidden'); closeSheet();
+  $('endturn').classList.add('hidden'); closeSheet(); clearSave();
   $('end-title').textContent = '¡'+KINGS[k].name+'!';
   $('end-sub').textContent = 'el reino tiene un solo trono';
   $('end-crown').style.color = k==='B' ? 'var(--muted)' : 'var(--accent)';
@@ -963,16 +974,46 @@ function endGame(k){
 }
 
 /* ============================================================
+   GUARDAR / REANUDAR PARTIDA (no perder progreso al minimizar)
+   ============================================================ */
+function saveGame(){ if(!G||!G.alive||G.alive.length<=1) return;
+  try{ localStorage.setItem('reyes_save', JSON.stringify({ num:G.num, current:G.current, alive:G.alive,
+    actions:G.actions, started:G.started, gold:G._gold,
+    regions:G.regions.map(r=>({o:r.owner,g:r.grade,p:r.pop,i:r.inf,a:r.arq,c:r.cat})) })); }catch(e){} }
+function clearSave(){ try{ localStorage.removeItem('reyes_save'); }catch(e){} }
+function loadSave(){ try{ return JSON.parse(localStorage.getItem('reyes_save')||'null'); }catch(e){ return null; } }
+function restoreGame(s){
+  const kings = s.num===3?['W','B','G']:['W','B'];
+  const capOf={W:CAP.W,B:CAP.B}; if(s.num===3)capOf.G=CAP.G;
+  const regions = MAP.regions.map((rd,i)=>{ const d=s.regions[i]||{}; return {owner:(d.o==null?null:d.o),grade:d.g||0,pop:d.p||0,inf:d.i||0,arq:d.a||0,cat:d.c||0}; });
+  G={ regions, kings, capOf, alive:s.alive, current:s.current, actions:s.actions, started:!!s.started, num:s.num, _gold:s.gold||{} };
+  buildMap(); sel=null; adjSet=new Set(); mode='idle'; refreshMap(); updateHUD();
+  showScreen('screen-game'); $('endturn').classList.remove('hidden'); Music.play('game');
+  toast('Partida reanudada');
+}
+// guarda al minimizar / ocultar la app
+['pagehide','visibilitychange'].forEach(ev=>window.addEventListener(ev,()=>{ if(document.visibilityState!=='visible') saveGame(); }));
+
+/* ============================================================
    MENÚ / OVERLAYS
    ============================================================ */
 let pendingKings=2;
 $('b-local').onclick=()=>{ Audio_.tap(); $('setup-overlay').classList.add('show'); };
 $('b-howto').onclick=()=>{ Audio_.tap(); $('howto-overlay').classList.add('show'); };
 $('howto-close').onclick=()=>$('howto-overlay').classList.remove('show');
+$('b-continue').onclick=()=>{ Audio_.tap(); const s=loadSave(); if(s) restoreGame(s); else $('b-continue').style.display='none'; };
 
 /* ---------- instalación PWA ---------- */
 // evita el menú nativo de imagen al mantener pulsado (descargar/compartir)
 document.addEventListener('contextmenu', e=>e.preventDefault());
+let deferredPrompt=null;
+const isStandalone = ()=> (window.matchMedia&&window.matchMedia('(display-mode: standalone)').matches) || navigator.standalone===true;
+window.addEventListener('beforeinstallprompt', e=>{ e.preventDefault(); deferredPrompt=e; if(!isStandalone()) $('b-install').style.display='block'; });
+window.addEventListener('appinstalled', ()=>{ deferredPrompt=null; const b=$('b-install'); if(b) b.style.display='none'; });
+$('b-install').onclick=async ()=>{ Audio_.tap();
+  if(deferredPrompt){ deferredPrompt.prompt(); try{ await deferredPrompt.userChoice; }catch(e){} deferredPrompt=null; $('b-install').style.display='none'; }
+  else { toast('Abre el menú ⋮ del navegador y elige “Instalar app” / “Añadir a pantalla de inicio”'); }
+};
 $('kingsel').onclick=e=>{ const o=e.target.closest('.opt'); if(!o)return;
   document.querySelectorAll('#kingsel .opt').forEach(x=>x.classList.remove('on')); o.classList.add('on');
   pendingKings=+o.dataset.n;
@@ -983,7 +1024,7 @@ $('kingsel').onclick=e=>{ const o=e.target.closest('.opt'); if(!o)return;
 };
 $('setup-start').onclick=()=>{ Audio_.tap(); $('setup-overlay').classList.remove('show'); newGame(pendingKings); };
 $('setup-cancel').onclick=()=>$('setup-overlay').classList.remove('show');
-function gotoMenu(){ showScreen('screen-menu'); $('curtain').classList.remove('show'); $('endturn').classList.add('hidden'); closeSheet(); Music.play('intro'); }
+function gotoMenu(){ clearSave(); showScreen('screen-menu'); $('curtain').classList.remove('show'); $('endturn').classList.add('hidden'); closeSheet(); Music.play('intro'); }
 $('btn-menu').onclick=()=>{ if(confirm('¿Abandonar la partida y volver al menú?')){ gotoMenu(); } };
 $('end-rematch').onclick=()=>{ $('end-overlay').classList.remove('show'); newGame(G.num); };
 $('end-menu').onclick=()=>{ $('end-overlay').classList.remove('show'); gotoMenu(); };
@@ -992,10 +1033,11 @@ $('end-menu').onclick=()=>{ $('end-overlay').classList.remove('show'); gotoMenu(
    SPLASH + VERSIÓN (leída de la caché del SW)
    ============================================================ */
 window.addEventListener('load', ()=>{
+  try{ if(loadSave()) $('b-continue').style.display='block'; }catch(e){}
   setTimeout(()=>{ const s=$('app-splash'); s.classList.add('hiding'); setTimeout(()=>s.style.display='none',650); }, 1400);
 });
 (async function showVersion(){
-  let v='reyes-v20';
+  let v='reyes-v22';
   try{ if('caches' in window){ const keys=await caches.keys(); const k=keys.find(x=>/^reyes-v/.test(x)); if(k)v=k; } }catch(e){}
   $('version-label').textContent=v.replace('reyes-','').toUpperCase()+' · SOCRAM GAMES';
 })();
