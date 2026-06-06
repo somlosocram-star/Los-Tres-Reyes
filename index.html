@@ -115,8 +115,8 @@ body:not(.light) .board-img{filter:brightness(.86) contrast(1.02);} /* atenúa u
 /* propiedad = TINTE translúcido sobre el pergamino (se ve el dibujo debajo) */
 .rf{stroke:none;pointer-events:none;transition:fill .25s;}
 .rf.own-W{fill:rgba(246,243,233,.46);}
-.rf.own-B{fill:rgba(18,15,11,.50);}
-.rf.own-G{fill:url(#hatchG);}
+.rf.own-B{fill:rgba(10,8,6,.74);}
+.rf.own-G{fill:rgba(122,120,113,.52);}
 .rf.neutral{fill:transparent;}
 /* resaltado de selección/adyacencia en rojo de minio (tinta de época), sin dibujar fronteras propias */
 .rb{fill:none;stroke:rgba(40,30,20,0.55);stroke-width:2;stroke-linejoin:round;pointer-events:none;transition:stroke .12s,stroke-width .12s;}
@@ -124,8 +124,10 @@ body:not(.light) .board-img{filter:brightness(.86) contrast(1.02);} /* atenúa u
 .rb.adj{stroke:#9e2b22;stroke-width:3.5;stroke-dasharray:10 7;stroke-linejoin:round;opacity:.85;}
 .r-gly{pointer-events:none;}
 .chapita{fill:#14110c;opacity:.9;pointer-events:none;}
-.r-num{font-family:'IBM Plex Mono',monospace;font-size:28px;font-weight:700;fill:#f3ead2;text-anchor:middle;dominant-baseline:central;pointer-events:none;}
-.r-name{font-family:'Cinzel',serif;font-size:27px;font-weight:600;fill:#2a2016;text-anchor:middle;dominant-baseline:central;pointer-events:none;paint-order:stroke;stroke:#f3ead2;stroke-width:5px;letter-spacing:.5px;}
+.r-num{font-family:'IBM Plex Mono',monospace;font-size:21px;font-weight:700;fill:#f3ead2;text-anchor:middle;dominant-baseline:central;pointer-events:none;}
+.r-name{font-family:'Cinzel',serif;font-size:18px;font-weight:600;fill:#2a2016;text-anchor:middle;dominant-baseline:central;pointer-events:none;paint-order:stroke;stroke:#f3ead2;stroke-width:4px;letter-spacing:.3px;visibility:hidden;}
+.r-name.capn{visibility:visible;}
+#gzoom.names-on .r-name{visibility:visible;}
 .cap-ring{fill:none;stroke:#9e2b22;stroke-width:2.5;pointer-events:none;opacity:.7;}
 .map-title{font-family:'Cormorant Garamond',serif;font-weight:700;fill:#2a2118;text-anchor:middle;pointer-events:none;letter-spacing:2px;}
 .hit{fill:transparent;stroke:none;pointer-events:all;cursor:pointer;}
@@ -156,6 +158,11 @@ body:not(.light) .board-img{filter:brightness(.86) contrast(1.02);} /* atenúa u
 
 /* stepper de cantidad */
 .stepper{display:flex;align-items:center;justify-content:center;gap:1rem;margin:.4rem 0 .8rem;}
+.cmp-list{margin:.2rem 0 .4rem;}
+.cmp-row{display:flex;align-items:center;gap:.6rem;}
+.cmp-row .troop-ico{width:36px;height:36px;object-fit:contain;flex:0 0 auto;filter:drop-shadow(0 1px 1px rgba(0,0,0,.25));}
+.cmp-row .stepper{flex:1;margin:.15rem 0;gap:.7rem;}
+.cmp-row .num small{display:block;font-size:.5rem;letter-spacing:.12em;color:var(--muted);text-transform:uppercase;}
 .stepper button{width:46px;height:46px;border:1px solid var(--line);border-radius:8px;background:var(--panel-2);font-size:1.6rem;line-height:1;touch-action:none;user-select:none;-webkit-user-select:none;cursor:pointer;}
 .stepper button:active{background:var(--panel);}
 .stepper .num{font-family:'IBM Plex Mono',monospace;font-size:2rem;font-weight:700;min-width:3rem;text-align:center;}
@@ -331,6 +338,12 @@ const P = {
   NEU_POB_MIN: 500, NEU_POB_MAX: 900,   // rango de población de los pueblos neutrales
   NEU_COMARCAS: 7,                      // comarcas neutrales (repartidas por el mapa)
   COM_POB_MIN: 1000, COM_POB_MAX: 1400, // rango de población de las comarcas neutrales
+  // --- combate por tipos ---
+  ATK:  { inf:1.0, arq:3.0, cat:1.6 },  // peso de ataque por tipo (arqueros pegan fuerte)
+  DEF:  { inf:1.0, arq:1.3, cat:1.0 },  // peso de defensa por tipo
+  CAT_ROMPE: 0.18,                      // cada catapulta anula 18% de la muralla (asedio)
+  AZAR: 0.20,                           // dispersión aleatoria del resultado (±)
+  NITIDEZ: 3,                           // cuanto mayor, menos sorpresas (curva de probabilidad)
 };
 const GRADO = ['Pueblo','Comarca','Ciudad'];
 const NOMBRES = ['Marenis','Aurelia','Veldara','Solcrana','Ámbria','Coralis','Drávena','Mistrala','Torvane','Elonar','Selindra','Brenor','Cendara','Valmira','Ossera','Lindara','Nuvelo','Aldenia','Veranor','Tormalis','Esmara','Caldoria','Morante','Siltara','Rúnara','Velmar','Otara','Galdris','Penira','Zarane','Lysera','Tordan','Bramor'];
@@ -357,13 +370,30 @@ function scaleToTotal(c,target){                 // escala una composición para
   const o={}; ks.forEach((k,i)=>o[k]=fl[i]); return o;
 }
 function compTxt(r){ const p=[]; if(r.inf)p.push(`${r.inf} inf`); if(r.arq)p.push(`${r.arq} arq`); if(r.cat)p.push(`${r.cat} cat`); return p.join(' · ')||'sin tropas'; }
+/* ---------- modelo de combate por tipos ---------- */
+function poderAtk(c){ return (c.inf||0)*P.ATK.inf + (c.arq||0)*P.ATK.arq + (c.cat||0)*P.ATK.cat; }
+function poderDef(c){ return (c.inf||0)*P.DEF.inf + (c.arq||0)*P.DEF.arq + (c.cat||0)*P.DEF.cat; }
+function murallaFactor(b, catAtk){           // la muralla del grado, reducida por catapultas atacantes
+  const base=P.BONUS[b.grade]; if(base<=1) return 1;
+  const rompe=Math.min(1, (catAtk||0)*P.CAT_ROMPE);
+  return 1 + (base-1)*(1-rompe);
+}
+function statsAtaque(sent, b){
+  const A=poderAtk(sent);
+  const muro=murallaFactor(b, sent.cat);
+  const D=poderDef(b)*muro;
+  const k=P.NITIDEZ;
+  const pWin = A<=0 ? 0 : Math.pow(A,k)/(Math.pow(A,k)+Math.pow(D,k));
+  return { A, D, muro, pWin };
+}
+const compTot = c => (c.inf||0)+(c.arq||0)+(c.cat||0);
 // glifos de asentamiento por grado (pueblo / comarca / ciudad), tinta neutra
 const GLYPH = [ {src:'glyph_pueblo.png', a:554/422}, {src:'glyph_comarca.png', a:826/550}, {src:'glyph_ciudad.png', a:942/497} ];
 const GLYPH_H = [30, 42, 52];   // alturas en viewBox (tablero isla 1100)
 // capitales fijas por rey: Blanco→Selindra, Negro→Drávena, Gris→Marenis
 const CAP = (()=>{ const c={}; MAP.regions.forEach(r=>{ if(r.capof) c[r.capof]=r.id; }); return c; })();
 const TROOP_IMG = { inf:'troop_infantry.png', arq:'troop_archer.png', cat:'troop_catapult.png' };
-const KINGS = { W:{name:'Rey Blanco', fill:'var(--own-w)'}, B:{name:'Rey Negro', fill:'var(--own-b)'}, G:{name:'Rey Gris', fill:'url(#hatchG)'} };
+const KINGS = { W:{name:'Rey Blanco', fill:'var(--own-w)'}, B:{name:'Rey Negro', fill:'rgba(10,8,6,.95)'}, G:{name:'Rey Gris', fill:'rgba(122,120,113,.9)'} };
 
 /* ---------- utilidades ---------- */
 const $ = id => document.getElementById(id);
@@ -534,8 +564,8 @@ function buildMap(){
     const cap=isCapital(rd.id);
     const gly=ce('image','r-gly'); gly.setAttribute('preserveAspectRatio','xMidYMax meet'); gMarks.appendChild(gly);
     const ring=ce('circle','cap-ring'); ring.setAttribute('cx',rd.cx); ring.setAttribute('cy',rd.cy); gMarks.appendChild(ring);
-    const name=ce('text','r-name'); name.setAttribute('x',rd.cx); name.textContent=nombreReg(rd.id); gMarks.appendChild(name);
-    const chip=ce('rect','chapita'); chip.setAttribute('rx','10'); chip.setAttribute('height','40'); gMarks.appendChild(chip);
+    const name=ce('text', cap?'r-name capn':'r-name'); name.setAttribute('x',rd.cx); name.textContent=nombreReg(rd.id); gMarks.appendChild(name);
+    const chip=ce('rect','chapita'); chip.setAttribute('rx','8'); chip.setAttribute('height','30'); gMarks.appendChild(chip);
     const lab=ce('text','r-num'); lab.setAttribute('x',rd.cx); gMarks.appendChild(lab);
     const h=ce('path','hit'); h.setAttribute('d',rd.d); h.dataset.id=rd.id; gHit.appendChild(h);
     svgEls[rd.id]={fill:f, border:b, label:lab, name, gly, ring, chip, cap, cx:rd.cx, cy:rd.cy};
@@ -567,11 +597,11 @@ function refreshMap(){
     el.gly.setAttribute('x', cx-w/2); el.gly.setAttribute('y', cy-h/2);
     el.gly.setAttribute('width', w); el.gly.setAttribute('height', h);
     // nombre encima del glifo
-    el.name.setAttribute('y', cy-h/2-14); el.name.textContent = nombreReg(rd.id);
+    el.name.setAttribute('y', cy-h/2-11); el.name.textContent = nombreReg(rd.id);
     // número de tropas en chapita oscura, debajo del glifo
-    const n=tot(r), txt=String(n), cw=txt.length*18+26;
+    const n=tot(r), txt=String(n), cw=txt.length*13+16;
     el.chip.setAttribute('x', cx-cw/2); el.chip.setAttribute('y', cy+h/2+2); el.chip.setAttribute('width', cw);
-    el.label.setAttribute('y', cy+h/2+22); el.label.textContent = txt;
+    el.label.setAttribute('y', cy+h/2+17); el.label.textContent = txt;
     // anillo rojo solo en capitales (el trono); sin corona
     if(el.cap){ el.ring.style.display=''; el.ring.setAttribute('cy', cy); el.ring.setAttribute('r', h*0.66); }
     else el.ring.style.display='none';
@@ -583,7 +613,7 @@ let zoom={s:1, tx:0, ty:0}, zoomRAF=null, fxGroups=[];
 // los filtros SVG (relieve, trazo a mano) se re-rasterizan al escalar: se apagan
 // durante el zoom/pellizco para que vaya fluido en móvil, y se restauran al parar.
 function setFX(on){ fxGroups.forEach(g=>g.el.setAttribute('filter', on?g.f:'none')); }
-function applyZoom(){ const g=$('gzoom'); if(g) g.setAttribute('transform',`translate(${zoom.tx} ${zoom.ty}) scale(${zoom.s})`); }
+function applyZoom(){ const g=$('gzoom'); if(g){ g.setAttribute('transform',`translate(${zoom.tx} ${zoom.ty}) scale(${zoom.s})`); g.classList.toggle('names-on', zoom.s>=1.5); } }
 function clampPan(){ const maxX=MAP.w*(zoom.s-1), maxY=MAP.h*(zoom.s-1);
   zoom.tx=Math.min(0,Math.max(-maxX,zoom.tx)); zoom.ty=Math.min(0,Math.max(-maxY,zoom.ty)); }
 function cancelZoomAnim(){ if(zoomRAF){ cancelAnimationFrame(zoomRAF); zoomRAF=null; setFX(true); } }
@@ -665,7 +695,7 @@ $('cur-go').onclick=()=>{ $('curtain').classList.remove('show'); Audio_.tap(); a
 function updateHUD(){
   const k=G.current;
   $('turn-name').textContent=KINGS[k].name;
-  const dot=$('turn-dot'); dot.style.background = k==='G' ? 'transparent' : (k==='W'?'var(--own-w)':'var(--own-b)');
+  const dot=$('turn-dot'); dot.style.background = k==='G' ? '#8a8880' : (k==='W'?'var(--own-w)':'#0b0906');
   dot.style.backgroundImage = k==='G' ? 'repeating-linear-gradient(45deg,var(--ink) 0 2px,transparent 2px 4px)' : 'none';
   $('gold-v').textContent=G._gold[k];
   $('act-v').textContent=G.actions;
@@ -704,7 +734,7 @@ function closeSheet(){ $('sheet').classList.remove('up'); }
 function openSheet(id){
   const r=G.regions[id];
   const dot=$('sh-dot');
-  dot.style.background = r.owner ? (r.owner==='W'?'var(--own-w)':r.owner==='B'?'var(--own-b)':'transparent') : 'transparent';
+  dot.style.background = r.owner ? (r.owner==='W'?'var(--own-w)':r.owner==='B'?'#0b0906':'#8a8880') : 'transparent';
   dot.style.backgroundImage = r.owner==='G' ? 'repeating-linear-gradient(45deg,var(--ink) 0 2px,transparent 2px 4px)' : 'none';
   dot.style.borderStyle = r.owner ? 'solid':'dotted';
   $('sh-title').textContent = nombreReg(id) + (isCapital(id)?' · capital':'');
@@ -791,37 +821,76 @@ function enterTargetMode(id){
 }
 function resolveMoveAttack(from, to){
   const a=G.regions[from], b=G.regions[to];
-  const maxSend=tot(a)-1; if(maxSend<1){ toast('Sin tropas para mover'); return; }
-  const friendly = b.owner===G.current;
-  stepperSheet({ title:(friendly?'Reforzar ':'Atacar ')+nombreReg(to), unit:'tropas', max:maxSend, val:0, min:0, confirmMin:1,
-    info:(q)=>{ if(friendly) return `refuerzo · llegan ${q} (sin pérdidas)`;
-      const muralla=Math.ceil(tot(b)*P.BONUS[b.grade]);
-      return q>muralla ? `muralla ${muralla} · si vences llegan ${Math.max(0,q-tot(b))}`
-                       : `muralla ${muralla} · ¡insuficiente! asalto fallido`; },
-    confirm:(n)=>{ if(friendly) reinforce(from,to,n); else combat(from,to,n); } });
+  if(tot(a)-1<1){ toast('Sin tropas para mover'); return; }
+  composeSheet(from, to, b.owner===G.current);
 }
-function reinforce(from,to,n){
+// selector de composición: eliges cuántas de cada tropa envías
+function composeSheet(from, to, friendly){
   const a=G.regions[from], b=G.regions[to];
-  const moved=takeProp(a,n); addComp(b,moved);     // se mueven enteros, sin pérdidas
-  Audio_.ok(); spendAction(); toast(`Refuerzo: ${n} → ${nombreReg(to)}`); afterAction(to);
+  const avail={inf:a.inf, arq:a.arq, cat:a.cat};
+  const maxTot=tot(a)-1;                         // siempre queda 1 defendiendo el origen
+  const sel={inf:0,arq:0,cat:0};
+  const tipos=['inf','arq','cat'].filter(t=>avail[t]>0);
+  $('sh-title').textContent=(friendly?'Reforzar ':'Atacar ')+nombreReg(to);
+  $('sh-meta').textContent=friendly?'refuerzo':(GRADO[b.grade]+' · def '+tot(b));
+  $('sh-dot').style.background='transparent'; $('sh-dot').style.borderStyle='solid';
+  let html='<div class="cmp-list">';
+  tipos.forEach(t=>{
+    html+=`<div class="cmp-row"><img class="troop-ico" src="${TROOP_IMG[t]}" alt="">
+      <div class="stepper"><button class="st-m" data-t="${t}">−</button>
+      <div class="num"><span class="st-q" data-t="${t}">0</span><small>${TIPOS[t].n} · ${avail[t]}</small></div>
+      <button class="st-p" data-t="${t}">+</button></div></div>`;
+  });
+  html+='</div><div class="hint comp" id="cmp-info"></div>'
+      + '<div class="sheet-actions"><button class="btn ghost" id="cmp-cancel">Cancelar</button>'
+      + `<button class="btn primary" id="cmp-ok">${friendly?'Reforzar':'Atacar'}</button></div>`;
+  $('sh-body').innerHTML=html; $('sheet').classList.add('up');
+  const upd=()=>{
+    tipos.forEach(t=>{ $('sh-body').querySelector(`.st-q[data-t="${t}"]`).textContent=sel[t]; });
+    const info=$('cmp-info');
+    if(compTot(sel)===0){ info.textContent='Elige las tropas a enviar'; return; }
+    if(friendly){ info.textContent=`Refuerzo · llegan ${compTot(sel)} (sin pérdidas)`; return; }
+    const s=statsAtaque(sel,b); const pct=Math.round(s.pWin*100);
+    const muroTxt = s.muro>1.02 ? ` · muralla ×${s.muro.toFixed(2)}` : '';
+    info.innerHTML=`Ataque <b>${Math.round(s.A)}</b> vs Defensa <b>${Math.round(s.D)}</b>${muroTxt}<br>probabilidad de victoria ~<b>${pct}%</b>`;
+  };
+  const setQ=(t,v)=>{ const otros=compTot(sel)-sel[t]; const cap=Math.min(avail[t], maxTot-otros);
+    const nv=Math.max(0,Math.min(cap,Math.round(v))); if(nv!==sel[t]){ sel[t]=nv; upd(); Audio_.tap(); } };
+  tipos.forEach(t=>{
+    holdRepeat($('sh-body').querySelector(`.st-m[data-t="${t}"]`), s=>setQ(t,sel[t]-s));
+    holdRepeat($('sh-body').querySelector(`.st-p[data-t="${t}"]`), s=>setQ(t,sel[t]+s));
+  });
+  upd();
+  $('cmp-cancel').onclick=()=>{ mode='sel'; onRegionTap(from); };
+  $('cmp-ok').onclick=()=>{ if(compTot(sel)<1){ toast('Elige cuántas tropas'); return; }
+    closeSheet(); if(friendly) reinforceComp(from,to,sel); else combatTyped(from,to,sel); };
 }
-function combat(from,to,n){
+function reinforceComp(from,to,sel){
   const a=G.regions[from], b=G.regions[to];
-  const bonus=P.BONUS[b.grade];
-  const muralla=Math.ceil(tot(b)*bonus);   // hay que superar esto para conquistar
-  const defensores=tot(b);                  // bajas reales del atacante = defensores que había
-  const sent=takeProp(a,n);                 // sale el destacamento (composición proporcional)
-  if(n>muralla){
-    const survN=Math.max(0, n-defensores);
-    const surv=scaleToTotal(sent, survN);
+  a.inf-=sel.inf; a.arq-=sel.arq; a.cat-=sel.cat;
+  b.inf+=sel.inf; b.arq+=sel.arq; b.cat+=sel.cat;
+  Audio_.ok(); spendAction(); toast(`Refuerzo: ${compTot(sel)} → ${nombreReg(to)}`); afterAction(to);
+}
+function combatTyped(from,to,sel){
+  const a=G.regions[from], b=G.regions[to];
+  a.inf-=sel.inf; a.arq-=sel.arq; a.cat-=sel.cat;        // sale el destacamento elegido
+  const s=statsAtaque(sel,b); const sentTot=compTot(sel);
+  const win = Math.random() < s.pWin;                    // ← azar: el % puede salir mal
+  if(win){
+    const ratio = s.A>0 ? s.D/s.A : 1;
+    let frac = (1 - ratio*0.8) * (0.8 + 0.4*Math.random());   // bajas según lo ajustado + suerte
+    frac = Math.max(0.05, Math.min(0.9, frac));
+    const survN=Math.max(1, Math.round(sentTot*frac));
+    const surv=scaleToTotal(sel, survN);
     const wasCapital=isCapital(to); const loser=b.owner;
-    b.owner=G.current; b.inf=surv.inf; b.arq=surv.arq; b.cat=surv.cat; // ocupan; defensor aniquilado
+    b.owner=G.current; b.inf=surv.inf; b.arq=surv.arq; b.cat=surv.cat;
     Audio_.conquer();
     if(wasCapital && loser){ eliminateKing(loser, to); toast(`¡${nombreReg(to)} conquistada! ${KINGS[loser].name} eliminado`); }
     else toast(`Conquistada ${nombreReg(to)} · ${survN} ocupan`);
   } else {
-    // asalto fallido: el destacamento muere (sent se descarta); el defensor sufre bajas proporcionales
-    const dmg=Math.floor(n/bonus); takeProp(b, Math.min(dmg, tot(b)));
+    const dmgFrac=Math.max(0.05, Math.min(0.85, (s.A/s.D)*0.55*(0.7+0.6*Math.random())));
+    const dmg=Math.min(tot(b), Math.round(tot(b)*dmgFrac));
+    takeProp(b, dmg);
     Audio_.lose(); toast(`Asalto rechazado en ${nombreReg(to)} · defensor −${dmg}`);
   }
   spendAction();
@@ -926,7 +995,7 @@ window.addEventListener('load', ()=>{
   setTimeout(()=>{ const s=$('app-splash'); s.classList.add('hiding'); setTimeout(()=>s.style.display='none',650); }, 1400);
 });
 (async function showVersion(){
-  let v='reyes-v19';
+  let v='reyes-v20';
   try{ if('caches' in window){ const keys=await caches.keys(); const k=keys.find(x=>/^reyes-v/.test(x)); if(k)v=k; } }catch(e){}
   $('version-label').textContent=v.replace('reyes-','').toUpperCase()+' · SOCRAM GAMES';
 })();
