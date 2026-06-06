@@ -147,7 +147,10 @@ body:not(.light) .board-img{filter:brightness(.86) contrast(1.02);} /* atenúa u
 .hint{font-family:'IBM Plex Mono',monospace;font-size:.66rem;letter-spacing:.06em;color:var(--muted);text-align:center;padding:.2rem 0 .1rem;}
 .hint.comp{color:var(--text);opacity:.8;font-size:.7rem;padding-top:0;margin-top:-.2rem;}
 .recruit-list{display:flex;flex-direction:column;gap:.45rem;margin:.2rem 0 .5rem;}
-.recruit-list .btn.troop{width:100%;margin:0;text-align:left;padding:.7rem .9rem;}
+.recruit-list .btn.troop{width:100%;margin:0;text-align:left;padding:.55rem .7rem;display:flex;align-items:center;gap:.7rem;}
+.troop-ico{width:48px;height:48px;flex:0 0 auto;object-fit:contain;background:#e7d9bc;border:1px solid rgba(20,17,12,.3);border-radius:9px;padding:4px;}
+.btn.troop[disabled] .troop-ico{opacity:.45;}
+.troop-tx{flex:1;}
 
 /* stepper de cantidad */
 .stepper{display:flex;align-items:center;justify-content:center;gap:1rem;margin:.4rem 0 .8rem;}
@@ -355,7 +358,10 @@ function scaleToTotal(c,target){                 // escala una composición para
 function compTxt(r){ const p=[]; if(r.inf)p.push(`${r.inf} inf`); if(r.arq)p.push(`${r.arq} arq`); if(r.cat)p.push(`${r.cat} cat`); return p.join(' · ')||'sin tropas'; }
 // glifos de asentamiento por grado (pueblo / comarca / ciudad), tinta neutra
 const GLYPH = [ {src:'glyph_pueblo.png', a:554/422}, {src:'glyph_comarca.png', a:826/550}, {src:'glyph_ciudad.png', a:942/497} ];
-const GLYPH_H = [100, 125, 135];   // alturas en unidades de viewBox (proporcional al grado)
+const GLYPH_H = [60, 82, 96];   // alturas en viewBox (más pequeños: no deben desbordar la región)
+// capitales fijas por rey: Blanco→Selindra, Negro→Drávena, Gris→Marenis
+const CAP = { W:10, B:6, G:0 };
+const TROOP_IMG = { inf:'troop_infantry.png', arq:'troop_archer.png', cat:'troop_catapult.png' };
 const KINGS = { W:{name:'Rey Blanco', fill:'var(--own-w)'}, B:{name:'Rey Negro', fill:'var(--own-b)'}, G:{name:'Rey Gris', fill:'url(#hatchG)'} };
 
 /* ---------- utilidades ---------- */
@@ -439,15 +445,27 @@ function regionAreas(){
 
 function newGame(numKings){
   const kings = numKings===3 ? ['W','B','G'] : ['W','B'];
-  const caps = MAP.capitals.slice(); // [c0,c1,c2]
-  const capOf = { W:caps[0], B:caps[1] };
-  if(numKings===3) capOf.G = caps[2];
+  const caps = [CAP.W, CAP.B, CAP.G]; // capitales fijas: Blanco→Selindra, Negro→Drávena, Gris→Marenis
+  const capOf = { W:CAP.W, B:CAP.B };
+  if(numKings===3) capOf.G = CAP.G;
 
   // --- población DESIGUAL: escalar por área DENTRO de cada grupo ---
   const areas = regionAreas();
   const capSet = new Set(caps); // las 3 capitales se tratan aparte
-  const villages = MAP.regions.map((r,i)=>i).filter(i=>!capSet.has(i)).sort((a,b)=>areas[b]-areas[a]);
-  const comarcas = new Set(villages.slice(0, P.NEU_COMARCAS)); // las mayores empiezan como Comarca
+  const villages = MAP.regions.map((r,i)=>i).filter(i=>!capSet.has(i));
+  // comarcas REPARTIDAS por todo el mapa: muestreo de punto más lejano desde las capitales
+  const cxy=i=>[MAP.regions[i].cx, MAP.regions[i].cy];
+  const d2=(a,b)=>{const p=cxy(a),q=cxy(b);return (p[0]-q[0])**2+(p[1]-q[1])**2;};
+  const comSel=[], seeds=[...caps];
+  while(comSel.length < P.NEU_COMARCAS){
+    let best=-1,bd=-1;
+    for(const i of villages){ if(comSel.includes(i))continue;
+      const md=Math.min(...seeds.concat(comSel).map(s=>d2(i,s)));
+      if(md>bd){ bd=md; best=i; }
+    }
+    if(best<0)break; comSel.push(best);
+  }
+  const comarcas = new Set(comSel);
   const puebloIds = villages.filter(i=>!comarcas.has(i));
   const range = ids => { const a=ids.map(i=>areas[i]); const mn=Math.min(...a),mx=Math.max(...a); return {mn,sp:(mx-mn)||1}; };
   const rP=range(puebloIds), rC=range([...comarcas]);
@@ -736,7 +754,7 @@ function openRecruitChooser(id){
     const cap = t==='cat' ? (P.CAP_CAT-r.cat) : room;             // tope: catapultas por ciudad; resto por 50% pob
     const ok = gold>=coste && cap>0 && G.actions>0;
     const nota = t==='cat' ? `${coste} oro · máx ${P.CAP_CAT}/ciudad` : `${coste} oro c/u`;
-    html+=`<button class="btn troop" data-t="${t}" ${ok?'':'disabled'}>${TIPOS[t].n}<span class="sub">${nota}</span></button>`;
+    html+=`<button class="btn troop" data-t="${t}" ${ok?'':'disabled'}><img class="troop-ico" src="${TROOP_IMG[t]}" alt=""><span class="troop-tx">${TIPOS[t].n}<span class="sub">${nota}</span></span></button>`;
   });
   html+='</div><div class="hint">infantería en cualquier región · arqueros en comarca y ciudad · catapultas solo en ciudad</div>';
   $('sh-body').innerHTML=html; $('sheet').classList.add('up');
@@ -916,7 +934,7 @@ window.addEventListener('load', ()=>{
   setTimeout(()=>{ const s=$('app-splash'); s.classList.add('hiding'); setTimeout(()=>s.style.display='none',650); }, 1400);
 });
 (async function showVersion(){
-  let v='reyes-v12';
+  let v='reyes-v13';
   try{ if('caches' in window){ const keys=await caches.keys(); const k=keys.find(x=>/^reyes-v/.test(x)); if(k)v=k; } }catch(e){}
   $('version-label').textContent=v.replace('reyes-','').toUpperCase()+' · SOCRAM GAMES';
 })();
