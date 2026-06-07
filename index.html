@@ -205,19 +205,29 @@ body:not(.light) .board-img{filter:brightness(.86) contrast(1.02);} /* atenúa u
 #toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
 
 /* ---- animación de batalla ---- */
-#battle-fx{position:fixed;inset:0;z-index:78;display:none;align-items:center;justify-content:center;background:rgba(10,9,7,.62);}
-#battle-fx.show{display:flex;}
-#battle-fx .bf-card{width:min(78vw,360px);aspect-ratio:1/1;border:1px solid rgba(20,17,12,.5);border-radius:6px;overflow:hidden;background:#e7d9bc;box-shadow:0 14px 44px rgba(0,0,0,.6);}
-#battle-fx img{width:100%;height:100%;object-fit:cover;display:block;}
-#battle-fx::after{content:'';position:absolute;inset:0;background:#9e2b22;opacity:0;pointer-events:none;}
-#battle-fx.phase1 .bf-card{animation:bfIn .64s cubic-bezier(.2,.9,.3,1) both;}
-#battle-fx.impact .bf-card{animation:bfShake .3s ease;}
-#battle-fx.impact::after{animation:bfFlash .42s ease;}
-#battle-fx.phase2 .bf-card{animation:bfSwap .84s ease forwards;}
-@keyframes bfIn{0%{transform:scale(.42);opacity:0;}100%{transform:scale(1);opacity:1;}}
-@keyframes bfShake{0%,100%{transform:translate(0,0);}20%{transform:translate(-6px,4px);}40%{transform:translate(7px,-3px);}60%{transform:translate(-5px,-4px);}80%{transform:translate(4px,5px);}}
-@keyframes bfFlash{0%{opacity:0;}25%{opacity:.5;}100%{opacity:0;}}
-@keyframes bfSwap{0%{opacity:0;transform:scale(.96);}16%{opacity:1;transform:scale(1);}74%{opacity:1;}100%{opacity:0;transform:scale(1.07);}}
+#battle-fx{position:fixed;inset:0;z-index:78;display:none;align-items:center;justify-content:center;background:rgba(10,9,7,0);transition:background .5s ease;}
+#battle-fx.show{display:flex;background:rgba(10,9,7,.66);}
+#battle-fx .bf-card{position:relative;width:min(82vw,380px);aspect-ratio:1/1;border:1px solid rgba(20,17,12,.55);border-radius:8px;overflow:hidden;background:#e7d9bc;box-shadow:0 18px 60px rgba(0,0,0,.65);}
+#battle-fx img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;}
+#battle-fx #bf-img2{opacity:0;}
+#battle-fx .bf-vig{position:absolute;inset:0;pointer-events:none;box-shadow:inset 0 0 55px 12px rgba(30,20,10,.5);}
+#battle-fx .bf-card::after{content:'';position:absolute;inset:0;background:#9e2b22;opacity:0;pointer-events:none;mix-blend-mode:multiply;}
+#battle-fx.show .bf-card{animation:bfIn .8s cubic-bezier(.2,.9,.3,1) both;}
+#battle-fx.show #bf-img{animation:bfKen 3.2s ease-out both;}        /* zoom lento, "respira" */
+#battle-fx.impact .bf-card{animation:bfShake .42s ease;}
+#battle-fx.impact .bf-card::after{animation:bfFlash .5s ease;}
+#battle-fx.phase2 #bf-img2{animation:bfFade .6s ease forwards;}    /* fundido cruzado al resultado */
+#battle-fx .bf-banner{position:absolute;left:0;right:0;bottom:0;text-align:center;padding:.5rem 0 .7rem;
+  font-family:'Cinzel','Cormorant Garamond',serif;font-weight:700;font-size:1.9rem;letter-spacing:.04em;color:#f2e7cf;
+  background:linear-gradient(transparent,rgba(15,10,6,.82));text-shadow:0 2px 6px rgba(0,0,0,.7);opacity:0;}
+#battle-fx .bf-banner.show{animation:bfBanner .5s ease forwards;}
+#battle-fx .bf-banner.win{color:#e8c887;}
+@keyframes bfIn{0%{transform:scale(.5);opacity:0;}100%{transform:scale(1);opacity:1;}}
+@keyframes bfKen{0%{transform:scale(1);}100%{transform:scale(1.14);}}
+@keyframes bfShake{0%,100%{transform:translate(0,0);}15%{transform:translate(-7px,5px);}35%{transform:translate(8px,-4px);}55%{transform:translate(-6px,-5px);}75%{transform:translate(5px,6px);}}
+@keyframes bfFlash{0%{opacity:0;}25%{opacity:.45;}100%{opacity:0;}}
+@keyframes bfFade{0%{opacity:0;}100%{opacity:1;}}
+@keyframes bfBanner{0%{opacity:0;transform:translateY(14px);}100%{opacity:1;transform:translateY(0);}}
 #end-img{width:100%;max-height:200px;object-fit:cover;border-radius:4px;margin-bottom:1rem;border:1px solid var(--line);}
 
 /* cortina de cambio de turno (pass-and-play) */
@@ -298,7 +308,7 @@ body.light .overlay{background:rgba(40,38,32,.4);}
 </div>
 
 <!-- animación de batalla -->
-<div id="battle-fx" aria-hidden="true"><div class="bf-card"><img id="bf-img" alt=""></div></div>
+<div id="battle-fx" aria-hidden="true"><div class="bf-card"><img id="bf-img" alt=""><img id="bf-img2" alt=""><div class="bf-vig"></div><div id="bf-banner" class="bf-banner"></div></div></div>
 
 <!-- panel contextual -->
 <div id="sheet">
@@ -393,7 +403,9 @@ const P = {
   DEF:  { inf:1.0, arq:1.3, cat:1.0 },  // peso de defensa por tipo
   CAT_ROMPE: 0.18,                      // cada catapulta anula 18% de la muralla (asedio)
   AZAR: 0.20,                           // dispersión aleatoria del resultado (±)
-  NITIDEZ: 3,                           // cuanto mayor, menos sorpresas (curva de probabilidad)
+  NITIDEZ: 3,                           // (en desuso con el combate por desgaste; se conserva)
+  CHOQUE: 1.6,                          // intensidad del desgaste: <1 indeciso · >1.5 contundente
+  GUARN: { media:150, fuerte:300 },     // umbrales de la etiqueta Débil/Media/Fuerte (niebla)
 };
 const GRADO = ['Pueblo','Comarca','Ciudad'];
 const NOMBRES = ['Marenis','Aurelia','Veldara','Solcrana','Ámbria','Coralis','Drávena','Mistrala','Torvane','Elonar','Selindra','Brenor','Cendara','Valmira','Ossera','Lindara','Nuvelo','Aldenia','Veranor','Tormalis','Esmara','Caldoria','Morante','Siltara','Rúnara','Velmar','Otara','Galdris','Penira','Zarane','Lysera','Tordan','Bramor'];
@@ -437,6 +449,14 @@ function statsAtaque(sent, b){
   return { A, D, muro, pWin };
 }
 const compTot = c => (c.inf||0)+(c.arq||0)+(c.cat||0);
+/* ---------- niebla: qué guarnición conoce el rey de turno ---------- */
+function knowsGarrison(r){ return r.owner===G.current || (r.intel && r.intel[G.current]); }
+function guarnLabel(r){ const n=tot(r); return n>=P.GUARN.fuerte?'Fuerte' : n>=P.GUARN.media?'Media' : 'Débil'; }
+function garrisonText(r){                       // texto de la chapita / panel según lo que sabe el rey
+  if(r.owner===G.current) return String(tot(r));               // propia: número exacto
+  if(r.intel && r.intel[G.current]) return '~'+(Math.round(tot(r)/10)*10); // ya combatida: aproximado
+  return guarnLabel(r);                                          // sin explorar: Fuerte/Media/Débil
+}
 // glifos de asentamiento por grado (pueblo / comarca / ciudad), tinta neutra
 const GLYPH = [ {src:'glyph_pueblo.png', a:554/422}, {src:'glyph_comarca.png', a:826/550}, {src:'glyph_ciudad.png', a:942/497} ];
 const GLYPH_H = [30, 42, 52];   // alturas en viewBox (tablero isla 1100)
@@ -564,6 +584,7 @@ function newGame(numKings){
   for(const k of kings){ const r=regions[capOf[k]]; r.owner=k; r.grade=2; r.pop=P.CAP_POB; r.inf=P.CAP_ARMY; r.arq=0; r.cat=0; }
   // en 2 jugadores: la 3ª capital es Ciudad neutral fuerte
   if(numKings===2){ const r=regions[caps[2]]; r.owner=null; r.grade=2; r.pop=P.CAP_POB; r.inf=P.CAP_ARMY; r.arq=0; r.cat=0; }
+  regions.forEach(r=>{ r.intel={}; });   // niebla: qué rey conoce la guarnición de cada región
   G = { regions, kings, capOf, alive:[...kings], current:null, actions:P.ACCIONES, started:false, num:numKings };
   // empieza un rey al azar
   G.current = kings[(Math.random()*kings.length)|0];
@@ -650,8 +671,8 @@ function refreshMap(){
     el.gly.setAttribute('width', w); el.gly.setAttribute('height', h);
     // nombre encima del glifo
     el.name.setAttribute('y', cy-h/2-11); el.name.textContent = nombreReg(rd.id);
-    // número de tropas en chapita oscura, debajo del glifo
-    const n=tot(r), txt=String(n), cw=txt.length*13+16;
+    // guarnición: número exacto (propia), ~aprox (ya combatida) o etiqueta (sin explorar)
+    const txt=garrisonText(r), cw=txt.length*13+16;
     el.chip.setAttribute('x', cx-cw/2); el.chip.setAttribute('y', cy+h/2+2); el.chip.setAttribute('width', cw);
     el.label.setAttribute('y', cy+h/2+17); el.label.textContent = txt;
     // anillo rojo solo en capitales (el trono); sin corona
@@ -794,11 +815,11 @@ function openSheet(id){
   const mine = r.owner===G.current;
   const ownerTxt = r.owner ? KINGS[r.owner].name : 'Neutral';
   let html = `<div class="stats">
-    <div class="stat"><div class="v">${tot(r)}</div><div class="k">ejército</div></div>
+    <div class="stat"><div class="v">${garrisonText(r)}</div><div class="k">ejército</div></div>
     <div class="stat"><div class="v">${r.pop}</div><div class="k">población</div></div>
     <div class="stat"><div class="v">×${P.BONUS[r.grade]}</div><div class="k">defensa</div></div>
   </div>
-  <div class="hint comp">${compTxt(r)}</div>`;
+  <div class="hint comp">${knowsGarrison(r)?compTxt(r):'composición desconocida'}</div>`;
   if(mine){
     const recCap = Math.floor(r.pop*P.RECLUTA_PCT);
     const room = recCap-(r.inf+r.arq);
@@ -926,48 +947,71 @@ function reinforceComp(from,to,sel){
 const BATTLE_IMG = { inf:'batalla_inf.png', arq:'batalla_arq.png', cat:'batalla_cat.png' };
 function attackKind(sel){ return sel.cat>0 ? 'cat' : (sel.arq>sel.inf && sel.arq>0 ? 'arq' : 'inf'); }
 function combatTyped(from,to,sel){
+  const res=computeCombat(from,to,sel);
+  const outcome = res.captured ? 'win' : (res.defLeft<=0 ? 'razed' : 'hold');
+  playBattle(attackKind(sel), outcome, ()=>applyCombatState(res), ()=>finishCombat(res));
+}
+function computeCombat(from,to,sel){
   const b=G.regions[to];
   const s=statsAtaque(sel,b);
-  const win = Math.random() < s.pWin;                    // ← azar: el % puede salir mal
-  playBattle(attackKind(sel), win, ()=>resolveCombat(from,to,sel,win));
+  const sentTot=compTot(sel), defTot=tot(b);
+  const adv = (s.A+s.D)>0 ? s.A/(s.A+s.D) : 0.5;          // cuota de fuerza del atacante
+  const rnd = ()=> 0.8 + 0.4*Math.random();               // suerte: ±20%
+  const I = P.CHOQUE;
+  const defLoss = Math.min(defTot, Math.round(defTot*Math.min(1, adv*I*rnd())));
+  const atkLoss = Math.min(sentTot, Math.round(sentTot*Math.min(1, (1-adv)*I*rnd())));
+  const defLeft = defTot-defLoss, survN = sentTot-atkLoss;
+  return { from, to, sel, defLoss, atkLoss, defLeft, survN, captured:(defLeft<=0 && survN>0) };
 }
-function resolveCombat(from,to,sel,win){
-  const a=G.regions[from], b=G.regions[to];
-  a.inf-=sel.inf; a.arq-=sel.arq; a.cat-=sel.cat;        // sale el destacamento elegido
-  const s=statsAtaque(sel,b); const sentTot=compTot(sel);
-  if(win){
-    const ratio = s.A>0 ? s.D/s.A : 1;
-    let frac = (1 - ratio*0.8) * (0.8 + 0.4*Math.random());   // bajas según lo ajustado + suerte
-    frac = Math.max(0.05, Math.min(0.9, frac));
-    const survN=Math.max(1, Math.round(sentTot*frac));
-    const surv=scaleToTotal(sel, survN);
-    const wasCapital=isCapital(to); const loser=b.owner;
-    b.owner=G.current; b.inf=surv.inf; b.arq=surv.arq; b.cat=surv.cat;
-    Audio_.conquer();
-    if(wasCapital && loser){ eliminateKing(loser, to); toast(`¡${nombreReg(to)} conquistada! ${KINGS[loser].name} eliminado`); }
-    else toast(`Conquistada ${nombreReg(to)} · ${survN} ocupan`);
+function applyCombatState(res){            // muta el estado y PINTA (se ejecuta en el impacto)
+  const a=G.regions[res.from], b=G.regions[res.to];
+  a.inf-=res.sel.inf; a.arq-=res.sel.arq; a.cat-=res.sel.cat;     // sale el destacamento
+  if(b.intel) b.intel[G.current]=true;                            // ya conoces su guarnición
+  takeProp(b, res.defLoss);                                       // bajas del defensor
+  const surv=scaleToTotal(res.sel, Math.max(0,res.survN));
+  res._wasCapital=isCapital(res.to); res._loser=b.owner;
+  if(res.captured){
+    b.owner=G.current; b.inf=surv.inf; b.arq=surv.arq; b.cat=surv.cat;   // ocupas con tus supervivientes
+    if(res._wasCapital && res._loser) eliminateKing(res._loser, res.to);
+  } else if(res.defLeft<=0){
+    b.owner=null;                                                  // aniquilación mutua → neutral
   } else {
-    const dmgFrac=Math.max(0.05, Math.min(0.85, (s.A/s.D)*0.55*(0.7+0.6*Math.random())));
-    const dmg=Math.min(tot(b), Math.round(tot(b)*dmgFrac));
-    takeProp(b, dmg);
-    Audio_.lose(); toast(`Asalto rechazado en ${nombreReg(to)} · defensor −${dmg}`);
+    addComp(a, surv);                                              // no rompes la defensa: repliegue al origen
   }
   spendAction();
-  if(!checkVictory()) afterAction(to);
+  refreshMap(); updateHUD(); saveGame();                           // color al instante
 }
-function playBattle(type, win, done){
-  const fx=$('battle-fx'), img=$('bf-img');
-  let finished=false, timers=[];
+function finishCombat(res){                // sonido + mensaje + siguiente paso (al cerrar la animación)
+  if(res.captured){
+    Audio_.conquer();
+    if(res._wasCapital && res._loser) toast(`¡${nombreReg(res.to)} conquistada! ${KINGS[res._loser].name} cae`);
+    else toast(`¡Conquistada ${nombreReg(res.to)}! ${res.survN} ocupan · tus bajas −${res.atkLoss}`);
+  } else if(res.defLeft<=0){
+    Audio_.lose(); toast(`${nombreReg(res.to)} queda arrasada · sin ocupantes`);
+  } else {
+    Audio_.lose(); toast(`Asalto a ${nombreReg(res.to)} · enemigo −${res.defLoss}, tus bajas −${res.atkLoss}`);
+  }
+  if(!checkVictory()) afterAction(res.captured ? res.to : res.from);
+}
+const RESULT_IMG = { win:'batalla_victoria.png', hold:'batalla_derrota.png', razed:'batalla_derrota.png' };
+const RESULT_TXT = { win:'¡Victoria!', hold:'Rechazados', razed:'Arrasada' };
+function playBattle(type, outcome, onImpact, onDone){
+  const fx=$('battle-fx'), img=$('bf-img'), img2=$('bf-img2'), banner=$('bf-banner');
+  let finished=false, impacted=false, timers=[];
+  const doImpact=()=>{ if(impacted) return; impacted=true; if(typeof onImpact==='function') onImpact(); };
   const finish=()=>{ if(finished) return; finished=true; timers.forEach(clearTimeout);
-    fx.classList.remove('show','phase1','phase2','impact'); fx.onpointerdown=null;
-    if(typeof done==='function') done(); };
-  img.onerror=finish;                                   // si falta el PNG, no bloquea el juego
-  img.src=BATTLE_IMG[type]||BATTLE_IMG.inf;
+    doImpact();                                          // si se salta antes del impacto, aplica igual
+    fx.className=''; fx.onpointerdown=null;
+    if(typeof onDone==='function') onDone(); };
+  banner.textContent=''; banner.className='bf-banner'; img2.style.display='none';
+  img.onerror=finish;                                    // si falta el PNG no bloquea el juego
+  img.src  = BATTLE_IMG[type]||BATTLE_IMG.inf;
+  img2.src = RESULT_IMG[outcome]||RESULT_IMG.hold;
   fx.className='show phase1';
-  timers.push(setTimeout(()=>fx.classList.add('impact'), 640));
-  timers.push(setTimeout(()=>{ img.src = win?'batalla_victoria.png':'batalla_derrota.png';
-    fx.classList.remove('phase1','impact'); fx.classList.add('phase2'); }, 940));
-  timers.push(setTimeout(finish, 1780));
+  timers.push(setTimeout(()=>{ fx.classList.add('impact'); doImpact(); }, 860));    // sacudida + pinta el mapa
+  timers.push(setTimeout(()=>{ img2.style.display='block'; fx.classList.remove('phase1','impact'); fx.classList.add('phase2');
+    banner.textContent=RESULT_TXT[outcome]||''; banner.classList.add('show', outcome); }, 1450));  // fundido al resultado
+  timers.push(setTimeout(finish, 3200));
   fx.onpointerdown=finish;                               // tocar = saltar
 }
 function eliminateKing(k, exceptCapital){
@@ -1044,13 +1088,14 @@ function endGame(k){
 function saveGame(){ if(!G||!G.alive||G.alive.length<=1) return;
   try{ localStorage.setItem('reyes_save', JSON.stringify({ num:G.num, current:G.current, alive:G.alive,
     actions:G.actions, started:G.started, gold:G._gold,
-    regions:G.regions.map(r=>({o:r.owner,g:r.grade,p:r.pop,i:r.inf,a:r.arq,c:r.cat})) })); }catch(e){} }
+    regions:G.regions.map(r=>({o:r.owner,g:r.grade,p:r.pop,i:r.inf,a:r.arq,c:r.cat,k:Object.keys(r.intel||{}).filter(x=>r.intel[x]).join('')})) })); }catch(e){} }
 function clearSave(){ try{ localStorage.removeItem('reyes_save'); }catch(e){} }
 function loadSave(){ try{ return JSON.parse(localStorage.getItem('reyes_save')||'null'); }catch(e){ return null; } }
 function restoreGame(s){
   const kings = s.num===3?['W','B','G']:['W','B'];
   const capOf={W:CAP.W,B:CAP.B}; if(s.num===3)capOf.G=CAP.G;
-  const regions = MAP.regions.map((rd,i)=>{ const d=s.regions[i]||{}; return {owner:(d.o==null?null:d.o),grade:d.g||0,pop:d.p||0,inf:d.i||0,arq:d.a||0,cat:d.c||0}; });
+  const regions = MAP.regions.map((rd,i)=>{ const d=s.regions[i]||{}; const intel={}; (d.k||'').split('').forEach(x=>{ if(x) intel[x]=true; });
+    return {owner:(d.o==null?null:d.o),grade:d.g||0,pop:d.p||0,inf:d.i||0,arq:d.a||0,cat:d.c||0,intel}; });
   G={ regions, kings, capOf, alive:s.alive, current:s.current, actions:s.actions, started:!!s.started, num:s.num, _gold:s.gold||{} };
   buildMap(); sel=null; adjSet=new Set(); mode='idle'; refreshMap(); updateHUD();
   showScreen('screen-game'); $('endturn').classList.remove('hidden'); Music.play('game');
@@ -1104,7 +1149,7 @@ window.addEventListener('load', ()=>{
   setTimeout(()=>{ const s=$('app-splash'); s.classList.add('hiding'); setTimeout(()=>s.style.display='none',650); }, 1400);
 });
 (async function showVersion(){
-  let v='reyes-v26';
+  let v='reyes-v27';
   try{ if('caches' in window){ const keys=await caches.keys(); const k=keys.find(x=>/^reyes-v/.test(x)); if(k)v=k; } }catch(e){}
   $('version-label').textContent=v.replace('reyes-','').toUpperCase()+' · SOCRAM GAMES';
 })();
