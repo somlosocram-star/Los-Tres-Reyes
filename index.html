@@ -339,6 +339,12 @@ body.light .overlay{background:rgba(40,38,32,.4);}
       <div class="opt" data-n="3"><div class="n">3</div><div class="l">+ rey gris</div></div>
     </div>
     <p class="mono" style="font-size:.78rem;color:var(--muted)" id="setup-note">Con 2 reyes, el tercer trono y sus tierras empiezan neutrales: una capital fuerte en disputa.</p>
+    <p>¿Quién lleva a los rivales?</p>
+    <div class="kingsel" id="aisel">
+      <div class="opt" data-ai="0"><div class="n">0</div><div class="l">todos humanos</div></div>
+      <div class="opt on" data-ai="1"><div class="n">1</div><div class="l">1 rival IA</div></div>
+      <div class="opt" data-ai="2"><div class="n">2</div><div class="l">2 rivales IA</div></div>
+    </div>
     <button class="btn primary" id="setup-start">Empezar</button>
     <button class="btn ghost" id="setup-cancel">Cancelar</button>
   </div>
@@ -382,18 +388,27 @@ const MAP = {"w":1100,"h":1467,"img":"selenia.jpg","cartouche":{"cx":550,"cy":11
 
 /* ---------- parámetros de balance (todo ajustable) ---------- */
 const P = {
-  ORO_INICIAL: 600,
+  ORO_INICIAL: 250,            // menos oro de salida: cada decisión pesa
   ACCIONES: 3,
+  // --- economía: renta PLANA por rango (no por población) → frena la bola de nieve ---
+  RENTA:      [12, 26, 50],    // oro/turno por región (Pueblo / Comarca / Ciudad)
+  RENTA_RICA: 30,              // bono de oro/turno de una región "rica" (mina/puerto)
+  N_RICAS: 3,                  // regiones ricas repartidas por el mapa
+  // --- mantenimiento: el ejército cuesta cada turno (castiga acumular y sentarse) ---
+  MANT: { inf:0.15, arq:0.3, cat:3 },  // oro/turno por tropa
+  // --- segunda vía de victoria: dominio del mapa ---
+  DOM_PCT: 0.6,                // controlar ≥60% de las regiones...
+  DOM_TURNS: 3,                // ...durante 3 turnos propios seguidos → victoria
   POB_MAX:   [900, 1500, 2400], // tope de población: Pueblo, Comarca, Ciudad
   CREC:      [25, 40, 70],       // crecimiento de población por turno (hacia el tope)
   RECLUTA_PCT: 0.5,             // solo se recluta hasta el 50% de la población
   BONUS:     [1.0, 1.3, 1.6],   // bono de defensa por grado
-  COSTE_MEJORA: [1500, 4000],   // Pueblo→Comarca, Comarca→Ciudad (ciudad desbloquea catapultas + máx. población)
+  COSTE_MEJORA: [400, 1100],   // Pueblo→Comarca, Comarca→Ciudad (ciudad desbloquea catapultas + máx. población)
   COSTE_INF: 5,                 // infantería: barata, en cualquier región
   COSTE_ARQ: 25,                // arqueros: en comarcas y ciudades
-  COSTE_CAT: 2000,              // catapultas: solo en ciudades, carísimas
+  COSTE_CAT: 600,               // catapultas: solo en ciudades, caras y de mantenimiento alto
   CAP_CAT: 8,                   // tope de catapultas por ciudad
-  CAP_POB: 1800, CAP_ARMY: 400, // capitales iniciales (Ciudad)
+  CAP_POB: 1800, CAP_ARMY: 200, // capitales iniciales (Ciudad)
   // población inicial DESIGUAL de las regiones neutrales (escalada por área):
   NEU_POB_MIN: 500, NEU_POB_MAX: 900,   // rango de población de los pueblos neutrales
   NEU_COMARCAS: 7,                      // comarcas neutrales (repartidas por el mapa)
@@ -455,7 +470,7 @@ function guarnLabel(r){ const n=tot(r); return n>=P.GUARN.fuerte?'Fuerte' : n>=P
 function garrisonText(r){                       // texto de la chapita / panel según lo que sabe el rey
   if(r.owner===G.current) return String(tot(r));               // propia: número exacto
   if(r.intel && r.intel[G.current]) return '~'+(Math.round(tot(r)/10)*10); // ya combatida: aproximado
-  return guarnLabel(r);                                          // sin explorar: Fuerte/Media/Débil
+  return '?';                                                   // sin explorar: fuerza DESCONOCIDA
 }
 // glifos de asentamiento por grado (pueblo / comarca / ciudad), tinta neutra
 const GLYPH = [ {src:'glyph_pueblo.png', a:554/422}, {src:'glyph_comarca.png', a:826/550}, {src:'glyph_ciudad.png', a:942/497} ];
@@ -531,6 +546,8 @@ function toast(msg){ const t=$('toast'); t.textContent=msg; t.classList.add('sho
    ESTADO DE JUEGO
    ============================================================ */
 let G = null; // {regions:[{owner,grade,pop,army}], kings:[], capOf:{}, current, actions, started}
+let aiBusy=false;                 // true mientras la máquina mueve (bloquea la entrada humana)
+function isAI(k){ return !!(G && G.ai && G.ai.includes(k)); }
 
 /* área de un polígono a partir de su path "M x y L ... Z" (fórmula del cordón) */
 function polyArea(d){
@@ -544,8 +561,10 @@ function regionAreas(){
   return MAP._areas = MAP.regions.map(r=>polyArea(r.d));
 }
 
-function newGame(numKings){
+function newGame(numKings, nAI){
+  nAI = Math.max(0, Math.min((numKings||2)-1, nAI||0));
   const kings = numKings===3 ? ['W','B','G'] : ['W','B'];
+  const ai = nAI>0 ? kings.slice(kings.length-nAI) : [];   // las IA ocupan los últimos tronos; el humano es Blanco
   const caps = [CAP.W, CAP.B, CAP.G]; // capitales fijas: Blanco→Selindra, Negro→Drávena, Gris→Marenis
   const capOf = { W:CAP.W, B:CAP.B };
   if(numKings===3) capOf.G = CAP.G;
@@ -567,6 +586,16 @@ function newGame(numKings){
     if(best<0)break; comSel.push(best);
   }
   const comarcas = new Set(comSel);
+  // regiones "ricas" (mina / puerto): recursos repartidos → razón para maniobrar y expandirse
+  const richSel=[], rseeds=[...caps];
+  while(richSel.length < Math.min(P.N_RICAS, villages.length)){
+    let best=-1,bd=-1;
+    for(const i of villages){ if(richSel.includes(i))continue;
+      const md=Math.min(...rseeds.concat(richSel).map(s=>d2(i,s)));
+      if(md>bd){ bd=md; best=i; } }
+    if(best<0)break; richSel.push(best);
+  }
+  const ricas = new Set(richSel);
   const puebloIds = villages.filter(i=>!comarcas.has(i));
   const range = ids => { const a=ids.map(i=>areas[i]); const mn=Math.min(...a),mx=Math.max(...a); return {mn,sp:(mx-mn)||1}; };
   const rP=range(puebloIds), rC=range([...comarcas]);
@@ -575,19 +604,20 @@ function newGame(numKings){
   const regions = MAP.regions.map((rd,i)=>{
     if(comarcas.has(i)){
       const pop=Math.round(P.COM_POB_MIN + normC(i)*(P.COM_POB_MAX-P.COM_POB_MIN));
-      return {owner:null, grade:1, pop, inf:Math.round(pop*0.20), arq:0, cat:0}; // ~20% de la población
+      return {owner:null, grade:1, pop, inf:Math.round(pop*0.20), arq:0, cat:0, rica:ricas.has(i)}; // ~20% de la población
     }
     const pop=Math.round(P.NEU_POB_MIN + normP(i)*(P.NEU_POB_MAX-P.NEU_POB_MIN));
-    return {owner:null, grade:0, pop, inf:Math.round(pop*0.16), arq:0, cat:0};   // ~16% de la población
+    return {owner:null, grade:0, pop, inf:Math.round(pop*0.16), arq:0, cat:0, rica:ricas.has(i)};   // ~16% de la población
   });
   // capitales de reyes (Ciudad)
   for(const k of kings){ const r=regions[capOf[k]]; r.owner=k; r.grade=2; r.pop=P.CAP_POB; r.inf=P.CAP_ARMY; r.arq=0; r.cat=0; }
   // en 2 jugadores: la 3ª capital es Ciudad neutral fuerte
   if(numKings===2){ const r=regions[caps[2]]; r.owner=null; r.grade=2; r.pop=P.CAP_POB; r.inf=P.CAP_ARMY; r.arq=0; r.cat=0; }
   regions.forEach(r=>{ r.intel={}; });   // niebla: qué rey conoce la guarnición de cada región
-  G = { regions, kings, capOf, alive:[...kings], current:null, actions:P.ACCIONES, started:false, num:numKings };
-  // empieza un rey al azar
-  G.current = kings[(Math.random()*kings.length)|0];
+  G = { regions, kings, capOf, alive:[...kings], current:null, actions:P.ACCIONES, started:false, num:numKings, dom:{}, ai };
+  // empieza un rey humano si lo hay (normalmente Blanco); si todos son IA, uno al azar
+  const humans = kings.filter(x=>!ai.includes(x));
+  G.current = humans.length ? humans[0] : kings[(Math.random()*kings.length)|0];
   buildMap();
   startTurn(true);
   showScreen('screen-game');
@@ -640,8 +670,10 @@ function buildMap(){
     const name=ce('text', cap?'r-name capn':'r-name'); name.setAttribute('x',rd.cx); name.textContent=nombreReg(rd.id); gMarks.appendChild(name);
     const chip=ce('rect','chapita'); chip.setAttribute('rx','8'); chip.setAttribute('height','30'); gMarks.appendChild(chip);
     const lab=ce('text','r-num'); lab.setAttribute('x',rd.cx); gMarks.appendChild(lab);
+    const rich=ce('circle'); rich.setAttribute('r','8'); rich.setAttribute('fill','#9e2b22');
+    rich.setAttribute('stroke','#f3e9d2'); rich.setAttribute('stroke-width','1.8'); rich.style.display='none'; gMarks.appendChild(rich);
     const h=ce('path','hit'); h.setAttribute('d',rd.d); h.dataset.id=rd.id; gHit.appendChild(h);
-    svgEls[rd.id]={fill:f, border:b, label:lab, name, gly, ring, chip, cap, cx:rd.cx, cy:rd.cy};
+    svgEls[rd.id]={fill:f, border:b, label:lab, name, gly, ring, chip, rich, cap, cx:rd.cx, cy:rd.cy};
   });
   // título en el cartucho vacío
   if(MAP.cartouche){
@@ -678,6 +710,9 @@ function refreshMap(){
     // anillo rojo solo en capitales (el trono); sin corona
     if(el.cap){ el.ring.style.display=''; el.ring.setAttribute('cy', cy); el.ring.setAttribute('r', h*0.66); }
     else el.ring.style.display='none';
+    // marca de región rica (recurso) arriba a la derecha del glifo
+    if(r.rica){ el.rich.style.display=''; el.rich.setAttribute('cx', cx+w/2); el.rich.setAttribute('cy', cy-h/2); }
+    else el.rich.style.display='none';
   });
 }
 
@@ -747,19 +782,40 @@ function autoZoomToActive(){
 let sel=null, adjSet=new Set(), mode='idle'; // idle | sel | target
 
 function startTurn(first){
-  // crecimiento + impuestos del rey activo
-  const k=G.current; let income=0;
-  G.regions.forEach((r,i)=>{ if(r.owner===k){ r.pop=Math.min(P.POB_MAX[r.grade], r.pop+P.CREC[r.grade]); income+=r.pop; } });
+  const k=G.current;
+  // crecimiento de población (alimenta el RECLUTAMIENTO, ya no la renta) + balance del turno
+  let renta=0, mant=0, regs=0;
+  G.regions.forEach((r)=>{ if(r.owner===k){
+    r.pop=Math.min(P.POB_MAX[r.grade], r.pop+P.CREC[r.grade]);
+    renta += P.RENTA[r.grade] + (r.rica?P.RENTA_RICA:0);
+    mant  += r.inf*P.MANT.inf + r.arq*P.MANT.arq + r.cat*P.MANT.cat;
+    regs++;
+  } });
+  const neto = Math.round(renta - mant);
   if(!G._gold) G._gold={}; if(G._gold[k]==null) G._gold[k]=P.ORO_INICIAL;
-  G._gold[k]+=income;
+  G._gold[k]=Math.max(0, G._gold[k]+neto);
   G.actions=P.ACCIONES; G.started=true;
+  if(checkDomination(k, regs)) return;          // ¿ya domina Selenia?
   deselect(); refreshMap(); updateHUD(); saveGame();
-  // cortina de paso de dispositivo
-  showCurtain(k, income);
+  if(isAI(k)) beginAITurn(k);                   // la máquina mueve sola
+  else { aiBusy=false; showCurtain(k, neto, regs); }
 }
-function showCurtain(k, income){
+function checkDomination(k, regs){
+  if(!G.dom) G.dom={};
+  const need=Math.ceil(P.DOM_PCT*G.regions.length);
+  G.dom[k] = (regs>=need) ? (G.dom[k]||0)+1 : 0;
+  if(G.dom[k]>=P.DOM_TURNS){ endGame(k,'dominio'); return true; }
+  return false;
+}
+function showCurtain(k, neto, regs){
   $('cur-name').textContent=KINGS[k].name;
-  $('cur-sub').textContent = income!=null ? `+${income} oro de impuestos · tu turno` : 'tu turno';
+  let sub='tu turno';
+  if(neto!=null){
+    sub = (neto>=0?`+${neto}`:`${neto}`)+' oro · tu turno';
+    const need=Math.ceil(P.DOM_PCT*G.regions.length), have=G.dom?(G.dom[k]||0):0;
+    if(regs>=need && have>0) sub += ` · dominio ${have}/${P.DOM_TURNS}`;
+  }
+  $('cur-sub').textContent = sub;
   $('cur-crown').style.color = k==='B' ? 'var(--muted)' : 'var(--accent)';
   $('curtain').classList.add('show');
 }
@@ -781,7 +837,7 @@ function endTurn(){
   for(let n=0;n<order.length;n++){ idx=(idx+1)%order.length; if(G.alive.includes(order[idx])){ G.current=order[idx]; break; } }
   startTurn(false);
 }
-$('endturn').onclick=()=>{ Audio_.tap(); endTurn(); };
+$('endturn').onclick=()=>{ if(aiBusy) return; Audio_.tap(); endTurn(); };
 
 function spendAction(){ G.actions--; updateHUD(); if(G.actions<=0){ toast('Sin acciones · termina el turno'); } }
 
@@ -791,6 +847,7 @@ function spendAction(){ G.actions--; updateHUD(); if(G.actions<=0){ toast('Sin a
 function deselect(){ sel=null; adjSet=new Set(); mode='idle'; closeSheet(); refreshMap(); $('endturn').classList.remove('hidden'); }
 
 function onRegionTap(id){
+  if(aiBusy) return;                 // la máquina está moviendo
   Audio_.tap();
   const r=G.regions[id];
   if(mode==='target'){
@@ -905,7 +962,7 @@ function composeSheet(from, to, friendly){
   const sel={inf:0,arq:0,cat:0};
   const tipos=['inf','arq','cat'].filter(t=>avail[t]>0);
   $('sh-title').textContent=(friendly?'Reforzar ':'Atacar ')+nombreReg(to);
-  $('sh-meta').textContent=friendly?'refuerzo':(GRADO[b.grade]+' · def '+tot(b));
+  $('sh-meta').textContent=friendly?'refuerzo':(GRADO[b.grade]+' · def '+garrisonText(b));
   $('sh-dot').style.background='transparent'; $('sh-dot').style.borderStyle='solid';
   let html='<div class="cmp-list">';
   tipos.forEach(t=>{
@@ -923,9 +980,17 @@ function composeSheet(from, to, friendly){
     const info=$('cmp-info');
     if(compTot(sel)===0){ info.textContent='Elige las tropas a enviar'; return; }
     if(friendly){ info.textContent=`Refuerzo · llegan ${compTot(sel)} (sin pérdidas)`; return; }
-    const s=statsAtaque(sel,b); const pct=Math.round(s.pWin*100);
+    const sent=compTot(sel), s=statsAtaque(sel,b);
+    if(!knowsGarrison(b)){
+      info.innerHTML=`Envías <b>${sent}</b> · guarnición rival <b>desconocida</b><br><small>la niebla la oculta — atacas sin saber su fuerza</small>`;
+      return;
+    }
+    const defN=tot(b), adv=(s.A+s.D)>0? s.A/(s.A+s.D):0.5, I=P.CHOQUE;
+    const dLoss=Math.min(defN, Math.round(defN*Math.min(1, adv*I)));
+    const aLoss=Math.min(sent, Math.round(sent*Math.min(1, (1-adv)*I)));
     const muroTxt = s.muro>1.02 ? ` · muralla ×${s.muro.toFixed(2)}` : '';
-    info.innerHTML=`Ataque <b>${Math.round(s.A)}</b> vs Defensa <b>${Math.round(s.D)}</b>${muroTxt}<br>probabilidad de victoria ~<b>${pct}%</b>`;
+    const lectura = dLoss>=defN ? ((sent-aLoss)>0?'tomas la región':'aniquilación mutua') : 'no rompes la defensa';
+    info.innerHTML=`Fuerza <b>${Math.round(s.A)}</b> vs <b>${Math.round(s.D)}</b>${muroTxt}<br>estimado: rival −${dLoss} · tú −${aLoss} · ${lectura} <small>±azar</small>`;
   };
   const setQ=(t,v)=>{ const otros=compTot(sel)-sel[t]; const cap=Math.min(avail[t], maxTot-otros);
     const nv=Math.max(0,Math.min(cap,Math.round(v))); if(nv!==sel[t]){ sel[t]=nv; upd(); Audio_.tap(); } };
@@ -991,7 +1056,10 @@ function finishCombat(res){                // sonido + mensaje + siguiente paso 
   } else {
     Audio_.lose(); toast(`Asalto a ${nombreReg(res.to)} · enemigo −${res.defLoss}, tus bajas −${res.atkLoss}`);
   }
-  if(!checkVictory()) afterAction(res.captured ? res.to : res.from);
+  if(!checkVictory()){
+    if(res.captured) deselect();          // se ve tuya al instante; reforzar es opcional (tócala si quieres)
+    else afterAction(res.from);
+  }
 }
 const RESULT_IMG = { win:'batalla_victoria.png', hold:'batalla_derrota.png', razed:'batalla_derrota.png' };
 const RESULT_TXT = { win:'¡Victoria!', hold:'Rechazados', razed:'Arrasada' };
@@ -1071,10 +1139,10 @@ function checkVictory(){
   }
   return false;
 }
-function endGame(k){
+function endGame(k, reason){
   $('endturn').classList.add('hidden'); closeSheet(); clearSave();
   $('end-title').textContent = '¡'+KINGS[k].name+'!';
-  $('end-sub').textContent = 'el reino tiene un solo trono';
+  $('end-sub').textContent = reason==='dominio' ? 'domina Selenia' : 'el reino tiene un solo trono';
   $('end-crown').style.color = k==='B' ? 'var(--muted)' : 'var(--accent)';
   const ei=$('end-img'); ei.onerror=()=>{ ei.style.display='none'; };
   ei.onload=()=>{ ei.style.display='block'; }; ei.src='fin_victoria.png';
@@ -1083,24 +1151,145 @@ function endGame(k){
 }
 
 /* ============================================================
-   GUARDAR / REANUDAR PARTIDA (no perder progreso al minimizar)
+   IA · rival controlado por la máquina (heurística por turnos)
    ============================================================ */
+const AI = {
+  pause: 850,            // ms entre acciones (ritmo visible)
+  margin: 1.15,          // exige fuerza ≥1.15× la defensa estimada antes de atacar
+  keepFrac: 0.18,        // fracción de tropas que deja de guarnición al atacar
+  goldBuffer: 60,        // no gasta por debajo de este colchón de oro
+  estDef: [120, 240, 400], // estimación de guarnición rival SIN explorar (Pueblo/Comarca/Ciudad)
+  recruitCap: 40,        // tope de tropas por reclutamiento
+};
+function beginAITurn(k){
+  aiBusy=true; $('endturn').classList.add('hidden'); closeSheet();
+  $('cur-name').textContent=KINGS[k].name;
+  $('cur-sub').textContent='la máquina mueve…';
+  $('cur-crown').style.color = k==='B' ? 'var(--muted)' : 'var(--accent)';
+  $('curtain').classList.add('show');
+  setTimeout(()=>{ $('curtain').classList.remove('show'); autoZoomToActive(); aiPlay(k); }, 1000);
+}
+function aiPlay(k){
+  if(!aiBusy || !G || G.current!==k || !G.alive.includes(k)) return;
+  if(G.actions<=0){ setTimeout(()=>{ if(aiBusy && G && G.current===k) endTurn(); }, AI.pause); return; }
+  const mv=aiBestMove(k);
+  if(!mv){ setTimeout(()=>{ if(aiBusy && G && G.current===k) endTurn(); }, AI.pause); return; }
+  aiDo(mv,k);
+  if(checkVictory()){ aiBusy=false; return; }   // partida terminada
+  setTimeout(()=>aiPlay(k), AI.pause);
+}
+function aiDo(mv,k){
+  const name=nombreReg(mv.to!=null?mv.to:mv.at);
+  if(mv.type==='attack'){
+    const res=computeCombat(mv.from, mv.to, mv.sel);
+    applyCombatState(res);                       // muta + pinta + gasta acción + guarda
+    if(res.captured) toast(`${KINGS[k].name} toma ${name}`);
+    else if(res.defLeft<=0) toast(`${KINGS[k].name} arrasa ${name}`);
+    else toast(`${KINGS[k].name} asalta ${name} · rival −${res.defLoss}`);
+  } else if(mv.type==='recruit'){
+    const r=G.regions[mv.at]; r[mv.t]+=mv.n; G._gold[k]-=mv.n*mv.coste;
+    spendAction(); refreshMap(); updateHUD(); saveGame();
+    toast(`${KINGS[k].name} recluta ${mv.n} en ${name}`);
+  } else if(mv.type==='upgrade'){
+    const r=G.regions[mv.at]; G._gold[k]-=P.COSTE_MEJORA[r.grade]; r.grade++;
+    r.pop=Math.min(P.POB_MAX[r.grade], Math.max(r.pop, Math.round(P.POB_MAX[r.grade]*0.55)));
+    spendAction(); refreshMap(); updateHUD(); saveGame();
+    toast(`${KINGS[k].name} mejora ${name} → ${GRADO[r.grade]}`);
+  }
+}
+function aiKnown(to,k){ const r=G.regions[to]; return r.owner===k || (r.intel && r.intel[k]); }
+function aiEvalAttack(sel, to, k){               // estimación determinista (suerte media) respetando la niebla
+  const r=G.regions[to], A=poderAtk(sel), sentN=compTot(sel);
+  const known=aiKnown(to,k);
+  const defN = known ? tot(r) : AI.estDef[r.grade];
+  const muro = known ? murallaFactor(r, sel.cat) : P.BONUS[r.grade];
+  const D = (known ? poderDef(r) : defN*P.DEF.inf) * muro;
+  const adv=(A+D)>0? A/(A+D):0.5, I=P.CHOQUE;
+  const defLoss=Math.min(defN, defN*Math.min(1,adv*I));
+  const atkLoss=Math.min(sentN, sentN*Math.min(1,(1-adv)*I));
+  return { A, D, captures:(defN-defLoss)<=0.5 && (sentN-atkLoss)>0.5, atkLoss };
+}
+function aiRegionValue(to,k){
+  const r=G.regions[to];
+  let v = [12,30,55][r.grade] + (r.rica?70:0);
+  if(r.owner && r.owner!==k){ v += 18; if(isCapital(to)) v += 250; }  // capital rival = objetivo decisivo
+  return v;
+}
+function aiBestMove(k){
+  const gold=G._gold[k]||0, mine=[];
+  G.regions.forEach((r,i)=>{ if(r.owner===k) mine.push(i); });
+  // 1) mejor ataque/expansión que prevea conquista con margen
+  let best=null, bestScore=0;
+  for(const from of mine){
+    const a=G.regions[from]; if(tot(a)<=1) continue;
+    const keep=Math.max(1, Math.round(AI.keepFrac*tot(a)));
+    const sendN=tot(a)-keep; if(sendN<1) continue;
+    const sel=scaleToTotal({inf:a.inf,arq:a.arq,cat:a.cat}, sendN);
+    if(compTot(sel)<1) continue;
+    for(const to of MAP.regions[from].adj){
+      const b=G.regions[to]; if(b.owner===k) continue;
+      const ev=aiEvalAttack(sel,to,k);
+      if(!ev.captures || ev.A < AI.margin*ev.D) continue;
+      const score = aiRegionValue(to,k) - ev.atkLoss*0.05;
+      if(score>bestScore){ bestScore=score; best={type:'attack',from,to,sel}; }
+    }
+  }
+  if(best) return best;
+  // 2) reclutar para crecer (en capital o frontera) si hay oro de sobra
+  if(gold > AI.goldBuffer + P.COSTE_INF*10){
+    const at=aiRecruitSpot(k);
+    if(at!=null){
+      const r=G.regions[at];
+      let t='inf', coste=P.COSTE_INF;
+      if(r.grade>=1 && gold > AI.goldBuffer + P.COSTE_ARQ*6 && Math.random()<0.5){ t='arq'; coste=P.COSTE_ARQ; }
+      const room=Math.max(0, Math.floor(r.pop*P.RECLUTA_PCT)-(r.inf+r.arq));
+      const n=Math.min(room, Math.floor((gold-AI.goldBuffer)/coste), AI.recruitCap);
+      if(n>=1) return {type:'recruit',at,t,n,coste};
+    }
+  }
+  // 3) mejorar una región segura (retaguardia) si sobra oro
+  if(gold > P.COSTE_MEJORA[0] + AI.goldBuffer){
+    const at=aiUpgradeSpot(k, gold);
+    if(at!=null) return {type:'upgrade',at};
+  }
+  return null;
+}
+function aiBorder(k, i){ return MAP.regions[i].adj.some(j=>G.regions[j].owner!==k); }
+function aiRecruitSpot(k){
+  const cap=G.capOf[k];
+  const room=r=>Math.max(0, Math.floor(r.pop*P.RECLUTA_PCT)-(r.inf+r.arq));
+  if(cap!=null && G.regions[cap].owner===k && room(G.regions[cap])>0) return cap;  // prioriza la capital
+  let best=null,bs=-1;
+  G.regions.forEach((r,i)=>{ if(r.owner===k && aiBorder(k,i)){ const sc=room(r); if(sc>bs){ bs=sc; best=i; } } });
+  if(best!=null && bs>0) return best;
+  let any=null,ba=-1;
+  G.regions.forEach((r,i)=>{ if(r.owner===k){ const sc=room(r); if(sc>ba){ ba=sc; any=i; } } });
+  return (ba>0)?any:null;
+}
+function aiUpgradeSpot(k, gold){
+  let best=null,bs=-1;
+  G.regions.forEach((r,i)=>{ if(r.owner===k && r.grade<2 && !aiBorder(k,i) && gold>=P.COSTE_MEJORA[r.grade]){
+    const sc=(r.rica?100:0)+r.pop*0.01-r.grade*5; if(sc>bs){ bs=sc; best=i; } } });
+  return best;
+}
+
+
 function saveGame(){ if(!G||!G.alive||G.alive.length<=1) return;
   try{ localStorage.setItem('reyes_save', JSON.stringify({ num:G.num, current:G.current, alive:G.alive,
-    actions:G.actions, started:G.started, gold:G._gold,
-    regions:G.regions.map(r=>({o:r.owner,g:r.grade,p:r.pop,i:r.inf,a:r.arq,c:r.cat,k:Object.keys(r.intel||{}).filter(x=>r.intel[x]).join('')})) })); }catch(e){} }
+    actions:G.actions, started:G.started, gold:G._gold, dom:G.dom||{}, ai:(G.ai||[]).join(''),
+    regions:G.regions.map(r=>({o:r.owner,g:r.grade,p:r.pop,i:r.inf,a:r.arq,c:r.cat,R:r.rica?1:0,k:Object.keys(r.intel||{}).filter(x=>r.intel[x]).join('')})) })); }catch(e){} }
 function clearSave(){ try{ localStorage.removeItem('reyes_save'); }catch(e){} }
 function loadSave(){ try{ return JSON.parse(localStorage.getItem('reyes_save')||'null'); }catch(e){ return null; } }
 function restoreGame(s){
   const kings = s.num===3?['W','B','G']:['W','B'];
   const capOf={W:CAP.W,B:CAP.B}; if(s.num===3)capOf.G=CAP.G;
   const regions = MAP.regions.map((rd,i)=>{ const d=s.regions[i]||{}; const intel={}; (d.k||'').split('').forEach(x=>{ if(x) intel[x]=true; });
-    return {owner:(d.o==null?null:d.o),grade:d.g||0,pop:d.p||0,inf:d.i||0,arq:d.a||0,cat:d.c||0,intel}; });
-  G={ regions, kings, capOf, alive:s.alive, current:s.current, actions:s.actions, started:!!s.started, num:s.num, _gold:s.gold||{} };
+    return {owner:(d.o==null?null:d.o),grade:d.g||0,pop:d.p||0,inf:d.i||0,arq:d.a||0,cat:d.c||0,intel,rica:!!d.R}; });
+  G={ regions, kings, capOf, alive:s.alive, current:s.current, actions:s.actions, started:!!s.started, num:s.num, _gold:s.gold||{}, dom:s.dom||{}, ai:(s.ai||'').split('').filter(Boolean) };
   buildMap(); sel=null; adjSet=new Set(); mode='idle'; refreshMap(); updateHUD();
   showScreen('screen-game'); $('endturn').classList.remove('hidden'); Music.play('game');
-  autoZoomToActive();                       // mismo encuadre que al empezar turno
-  toast('Partida reanudada');
+  if(isAI(G.current)){ beginAITurn(G.current); }    // si guardó en turno de la máquina, que siga
+  else { aiBusy=false; autoZoomToActive(); toast('Partida reanudada'); }
 }
 // guarda al minimizar / ocultar la app
 ['pagehide','visibilitychange'].forEach(ev=>window.addEventListener(ev,()=>{ if(document.visibilityState!=='visible') saveGame(); }));
@@ -1109,6 +1298,7 @@ function restoreGame(s){
    MENÚ / OVERLAYS
    ============================================================ */
 let pendingKings=2;
+let pendingAI=1;
 $('b-local').onclick=()=>{ Audio_.tap(); $('setup-overlay').classList.add('show'); };
 $('b-howto').onclick=()=>{ Audio_.tap(); $('howto-overlay').classList.add('show'); };
 $('howto-close').onclick=()=>$('howto-overlay').classList.remove('show');
@@ -1125,19 +1315,31 @@ $('b-install').onclick=async ()=>{ Audio_.tap();
   if(deferredPrompt){ deferredPrompt.prompt(); try{ await deferredPrompt.userChoice; }catch(e){} deferredPrompt=null; $('b-install').style.display='none'; }
   else { toast('Abre el menú ⋮ del navegador y elige “Instalar app” / “Añadir a pantalla de inicio”'); }
 };
+function syncAiOptions(){
+  const o2 = document.querySelector('#aisel .opt[data-ai="2"]');
+  const allow2 = pendingKings>=3;
+  if(o2){ o2.style.opacity = allow2?'':'.35'; o2.style.pointerEvents = allow2?'':'none'; }
+  if(pendingAI > pendingKings-1) pendingAI = pendingKings-1;   // como máx. reyes-1 IA
+  document.querySelectorAll('#aisel .opt').forEach(x=>x.classList.toggle('on', +x.dataset.ai===pendingAI));
+  const human = pendingKings - pendingAI;
+  $('setup-note').textContent =
+    pendingAI===0 ? (pendingKings===2
+        ? 'Paso y juega: 2 humanos. El tercer trono queda neutral.'
+        : 'Paso y juega: 3 humanos en rotación.')
+    : `${human} humano${human>1?'s':''} contra ${pendingAI} rey${pendingAI>1?'es':''} de la máquina. Tú juegas como Blanco.`;
+}
 $('kingsel').onclick=e=>{ const o=e.target.closest('.opt'); if(!o)return;
   document.querySelectorAll('#kingsel .opt').forEach(x=>x.classList.remove('on')); o.classList.add('on');
-  pendingKings=+o.dataset.n;
-  $('setup-note').textContent = pendingKings===2
-    ? 'Con 2 reyes, el tercer trono y sus tierras empiezan neutrales: una capital fuerte en disputa.'
-    : 'Tres reyes en rotación. Tomar una capital elimina a su rey; sus tierras quedan neutrales.';
-  Audio_.tap();
+  pendingKings=+o.dataset.n; syncAiOptions(); Audio_.tap();
 };
-$('setup-start').onclick=()=>{ Audio_.tap(); $('setup-overlay').classList.remove('show'); newGame(pendingKings); };
+$('aisel').onclick=e=>{ const o=e.target.closest('.opt'); if(!o||o.style.pointerEvents==='none')return;
+  pendingAI=+o.dataset.ai; syncAiOptions(); Audio_.tap();
+};
+$('setup-start').onclick=()=>{ Audio_.tap(); $('setup-overlay').classList.remove('show'); newGame(pendingKings, pendingAI); };
 $('setup-cancel').onclick=()=>$('setup-overlay').classList.remove('show');
-function gotoMenu(){ clearSave(); showScreen('screen-menu'); $('curtain').classList.remove('show'); $('endturn').classList.add('hidden'); closeSheet(); Music.play('intro'); }
+function gotoMenu(){ aiBusy=false; clearSave(); showScreen('screen-menu'); $('curtain').classList.remove('show'); $('endturn').classList.add('hidden'); closeSheet(); Music.play('intro'); }
 $('btn-menu').onclick=()=>{ if(confirm('¿Abandonar la partida y volver al menú?')){ gotoMenu(); } };
-$('end-rematch').onclick=()=>{ $('end-overlay').classList.remove('show'); newGame(G.num); };
+$('end-rematch').onclick=()=>{ $('end-overlay').classList.remove('show'); newGame(G.num, (G.ai||[]).length); };
 $('end-menu').onclick=()=>{ $('end-overlay').classList.remove('show'); gotoMenu(); };
 
 /* ============================================================
@@ -1145,11 +1347,12 @@ $('end-menu').onclick=()=>{ $('end-overlay').classList.remove('show'); gotoMenu(
    ============================================================ */
 window.addEventListener('load', ()=>{
   try{ if(loadSave()) $('b-continue').style.display='block'; }catch(e){}
+  try{ syncAiOptions(); }catch(e){}
   if(!isStandalone()) $('b-install').style.display='block';   // vía de instalación siempre visible
   setTimeout(()=>{ const s=$('app-splash'); s.classList.add('hiding'); setTimeout(()=>s.style.display='none',650); }, 1400);
 });
 (async function showVersion(){
-  let v='reyes-v27';
+  let v='reyes-v29';
   try{ if('caches' in window){ const keys=await caches.keys(); const k=keys.find(x=>/^reyes-v/.test(x)); if(k)v=k; } }catch(e){}
   $('version-label').textContent=v.replace('reyes-','').toUpperCase()+' · SOCRAM GAMES';
 })();
