@@ -1,6 +1,6 @@
 /* Los Tres Reyes — Service Worker
    Nomenclatura secuencial: reyes-vXX (subir el número en cada entrega). */
-const CACHE = 'reyes-v32';
+const CACHE = 'reyes-v33';
 const ASSETS = [
   './',
   './index.html',
@@ -47,16 +47,22 @@ self.addEventListener('activate', e=>{
   );
 });
 
-// cache-first para los assets propios; red para todo lo demás (p.ej. fuentes/firebase)
+// HTML: RED primero (un despliegue nuevo se ve al instante; caché como respaldo offline)
+// estáticos: caché primero. Externos (fuentes/firebase): red normal.
 self.addEventListener('fetch', e=>{
-  const url = new URL(e.request.url);
-  if(url.origin === location.origin){
+  const req=e.request, url=new URL(req.url);
+  if(url.origin !== location.origin) return;
+  const isHTML = req.mode==='navigate' || (req.headers.get('accept')||'').includes('text/html');
+  if(isHTML){
     e.respondWith(
-      caches.match(e.request).then(r=> r || fetch(e.request).then(resp=>{
-        const copy=resp.clone();
-        caches.open(CACHE).then(c=>c.put(e.request, copy)).catch(()=>{});
-        return resp;
-      }).catch(()=>caches.match('./index.html')))
+      fetch(req).then(resp=>{ const copy=resp.clone();
+        caches.open(CACHE).then(c=>c.put('./index.html', copy)).catch(()=>{}); return resp; })
+      .catch(()=>caches.match(req).then(r=> r || caches.match('./index.html')))
     );
+    return;
   }
+  e.respondWith(
+    caches.match(req).then(r=> r || fetch(req).then(resp=>{ const copy=resp.clone();
+      caches.open(CACHE).then(c=>c.put(req, copy)).catch(()=>{}); return resp; }).catch(()=>undefined))
+  );
 });
