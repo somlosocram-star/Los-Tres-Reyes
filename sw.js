@@ -1,6 +1,6 @@
 /* Los Tres Reyes — Service Worker
    Nomenclatura secuencial: reyes-vXX (subir el número en cada entrega). */
-const CACHE = 'reyes-v22';
+const CACHE = 'reyes-v24';
 const ASSETS = [
   './',
   './index.html',
@@ -19,6 +19,12 @@ const ASSETS = [
   './troop_infantry.png',
   './troop_archer.png',
   './troop_catapult.png',
+  './batalla_inf.png',
+  './batalla_arq.png',
+  './batalla_cat.png',
+  './batalla_victoria.png',
+  './batalla_derrota.png',
+  './fin_victoria.png',
   './music-intro.mp3',
   './music-game-1.mp3',
   './music-game-2.mp3',
@@ -27,7 +33,10 @@ const ASSETS = [
 
 self.addEventListener('install', e=>{
   self.skipWaiting();
-  e.waitUntil(caches.open(CACHE).then(c=>c.addAll(ASSETS)).catch(()=>{}));
+  // se cachea cada asset por separado: si alguno falta (404) no rompe el resto
+  e.waitUntil(
+    caches.open(CACHE).then(c=>Promise.allSettled(ASSETS.map(u=>c.add(u)))).catch(()=>{})
+  );
 });
 
 self.addEventListener('activate', e=>{

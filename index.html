@@ -94,6 +94,25 @@ h1.title{font-size:clamp(2.6rem,12vw,3.6rem);font-weight:700;letter-spacing:.01e
 .btn:disabled{opacity:.4;}
 .btn .sub{display:block;font-family:'IBM Plex Mono',monospace;font-size:.62rem;letter-spacing:.22em;text-transform:uppercase;color:var(--muted);margin-top:.25rem;}
 .btn.primary .sub{color:var(--on-accent);opacity:.7;}
+
+/* ---- placas de pergamino del menú ---- */
+.plaque{position:relative;display:block;width:min(360px,86vw);margin:.55rem auto;padding:7px;border:none;border-radius:6px;
+  background:
+    radial-gradient(circle at 12px 12px,#d7b15a 0 3px,rgba(0,0,0,.4) 4px 6px,transparent 7px),
+    radial-gradient(circle at calc(100% - 12px) 12px,#d7b15a 0 3px,rgba(0,0,0,.4) 4px 6px,transparent 7px),
+    radial-gradient(circle at 12px calc(100% - 12px),#d7b15a 0 3px,rgba(0,0,0,.4) 4px 6px,transparent 7px),
+    radial-gradient(circle at calc(100% - 12px) calc(100% - 12px),#d7b15a 0 3px,rgba(0,0,0,.4) 4px 6px,transparent 7px),
+    linear-gradient(#2c2924,#181612);
+  box-shadow:0 4px 14px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.07);
+  transition:transform .12s ease;}
+.plaque:active{transform:scale(.975);}
+.plaque .pl-inner{display:flex;flex-direction:column;justify-content:center;min-height:62px;border-radius:3px;padding:.7rem 1rem;text-align:center;
+  background:linear-gradient(160deg,#f1e7d0,#e2d2ac);
+  box-shadow:inset 0 0 0 2px #7a1f17,inset 0 0 0 3px rgba(0,0,0,.12),inset 0 2px 10px rgba(90,60,20,.2);}
+.plaque .pl-title{display:block;font-family:'Cormorant Garamond',serif;font-weight:700;font-size:1.7rem;line-height:1.02;color:#1c140e;}
+.plaque .pl-sub{display:block;margin-top:.28rem;font-family:'IBM Plex Mono',monospace;font-size:.6rem;letter-spacing:.18em;text-transform:uppercase;color:#7a1f17;}
+.plaque[disabled]{opacity:.5;filter:grayscale(.45);pointer-events:none;}
+#b-install{margin-top:.5rem;opacity:.7;}
 .version{position:fixed;bottom:max(.7rem,env(safe-area-inset-bottom));left:0;right:0;text-align:center;font-family:'IBM Plex Mono',monospace;font-size:.6rem;letter-spacing:.25em;color:var(--muted);z-index:11;}
 
 /* ---- juego: HUD ---- */
@@ -131,7 +150,7 @@ body:not(.light) .board-img{filter:brightness(.86) contrast(1.02);} /* atenúa u
 .r-name.capn{visibility:visible;}
 #gzoom.names-on .r-name{visibility:visible;}
 .cap-ring{fill:none;stroke:#9e2b22;stroke-width:2.5;pointer-events:none;opacity:.7;}
-.map-title{font-family:'Cormorant Garamond',serif;font-weight:700;fill:#2a2118;text-anchor:middle;pointer-events:none;letter-spacing:2px;}
+.map-title{font-family:'Cormorant Garamond',serif;font-weight:700;fill:#2a2118;text-anchor:middle;pointer-events:none;letter-spacing:1px;}
 .hit{fill:transparent;stroke:none;pointer-events:all;cursor:pointer;}
 
 /* panel inferior contextual */
@@ -184,6 +203,22 @@ body:not(.light) .board-img{filter:brightness(.86) contrast(1.02);} /* atenúa u
 /* toast / log */
 #toast{position:fixed;top:calc(54px + env(safe-area-inset-top));left:50%;transform:translateX(-50%) translateY(-12px);z-index:60;background:var(--panel-2);border:1px solid var(--line);border-radius:6px;padding:.5rem .9rem;font-family:'IBM Plex Mono',monospace;font-size:.72rem;letter-spacing:.04em;opacity:0;transition:opacity .25s,transform .25s;max-width:88vw;text-align:center;pointer-events:none;}
 #toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+
+/* ---- animación de batalla ---- */
+#battle-fx{position:fixed;inset:0;z-index:78;display:none;align-items:center;justify-content:center;background:rgba(10,9,7,.62);}
+#battle-fx.show{display:flex;}
+#battle-fx .bf-card{width:min(78vw,360px);aspect-ratio:1/1;border:1px solid rgba(20,17,12,.5);border-radius:6px;overflow:hidden;background:#e7d9bc;box-shadow:0 14px 44px rgba(0,0,0,.6);}
+#battle-fx img{width:100%;height:100%;object-fit:cover;display:block;}
+#battle-fx::after{content:'';position:absolute;inset:0;background:#9e2b22;opacity:0;pointer-events:none;}
+#battle-fx.phase1 .bf-card{animation:bfIn .64s cubic-bezier(.2,.9,.3,1) both;}
+#battle-fx.impact .bf-card{animation:bfShake .3s ease;}
+#battle-fx.impact::after{animation:bfFlash .42s ease;}
+#battle-fx.phase2 .bf-card{animation:bfSwap .84s ease forwards;}
+@keyframes bfIn{0%{transform:scale(.42);opacity:0;}100%{transform:scale(1);opacity:1;}}
+@keyframes bfShake{0%,100%{transform:translate(0,0);}20%{transform:translate(-6px,4px);}40%{transform:translate(7px,-3px);}60%{transform:translate(-5px,-4px);}80%{transform:translate(4px,5px);}}
+@keyframes bfFlash{0%{opacity:0;}25%{opacity:.5;}100%{opacity:0;}}
+@keyframes bfSwap{0%{opacity:0;transform:scale(.96);}16%{opacity:1;transform:scale(1);}74%{opacity:1;}100%{opacity:0;transform:scale(1.07);}}
+#end-img{width:100%;max-height:200px;object-fit:cover;border-radius:4px;margin-bottom:1rem;border:1px solid var(--line);}
 
 /* cortina de cambio de turno (pass-and-play) */
 #curtain{position:fixed;inset:0;z-index:70;background:var(--bg);display:none;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:2rem;}
@@ -240,10 +275,10 @@ body.light .overlay{background:rgba(40,38,32,.4);}
   <div class="seal"><svg><use href="#ico-crown"/></svg></div>
   <h1 class="title">Los Tres<br>Reyes</h1>
   <div class="tagline">conquista o muere</div>
-  <button class="btn primary" id="b-continue" style="display:none">Continuar partida<span class="sub">retomar donde lo dejaste</span></button>
-  <button class="btn primary" id="b-local">Partida local<span class="sub">paso y juega · 2–3 reyes</span></button>
-  <button class="btn" id="b-online" disabled>En línea<span class="sub">próximamente · v2</span></button>
-  <button class="btn ghost" id="b-howto">Cómo se juega</button>
+  <button class="plaque" id="b-continue" style="display:none"><span class="pl-inner"><span class="pl-title">Continuar partida</span><span class="pl-sub">retomar donde lo dejaste</span></span></button>
+  <button class="plaque" id="b-local"><span class="pl-inner"><span class="pl-title">Partida local</span><span class="pl-sub">paso y juega · 2–3 reyes</span></span></button>
+  <button class="plaque" id="b-online" disabled><span class="pl-inner"><span class="pl-title">En línea</span><span class="pl-sub">próximamente · v2</span></span></button>
+  <button class="plaque" id="b-howto"><span class="pl-inner"><span class="pl-title">Cómo se juega</span></span></button>
   <button class="btn ghost" id="b-install" style="display:none">Instalar app<span class="sub">añadir a la pantalla de inicio</span></button>
 </div>
 
@@ -261,6 +296,9 @@ body.light .overlay{background:rgba(40,38,32,.4);}
   <button id="endturn" class="hidden">Terminar turno ▸</button>
   <div id="toast"></div>
 </div>
+
+<!-- animación de batalla -->
+<div id="battle-fx" aria-hidden="true"><div class="bf-card"><img id="bf-img" alt=""></div></div>
 
 <!-- panel contextual -->
 <div id="sheet">
@@ -314,6 +352,7 @@ body.light .overlay{background:rgba(40,38,32,.4);}
 <!-- fin -->
 <div id="end-overlay" class="overlay">
   <div class="card center" id="end-card" style="text-align:center">
+    <img id="end-img" alt="" style="display:none">
     <div class="seal"><svg id="end-crown" style="color:var(--accent)"><use href="#ico-crown"/></svg></div>
     <h2 id="end-title">Victoria</h2>
     <div class="lead" id="end-sub">el reino tiene un solo rey</div>
@@ -531,6 +570,8 @@ function newGame(numKings){
   buildMap();
   startTurn(true);
   showScreen('screen-game');
+  ['batalla_inf.png','batalla_arq.png','batalla_cat.png','batalla_victoria.png','batalla_derrota.png','fin_victoria.png']
+    .forEach(s=>{ const im=new Image(); im.src=s; });   // precarga silenciosa
   Music.play('game');
 }
 
@@ -583,10 +624,10 @@ function buildMap(){
   });
   // título en el cartucho vacío
   if(MAP.cartouche){
-    const t1=ce('text','map-title'); t1.setAttribute('x',MAP.cartouche.cx); t1.setAttribute('y',MAP.cartouche.cy-14);
-    t1.setAttribute('font-size','52'); t1.textContent='LOS TRES'; gMarks.appendChild(t1);
-    const t2=ce('text','map-title'); t2.setAttribute('x',MAP.cartouche.cx); t2.setAttribute('y',MAP.cartouche.cy+40);
-    t2.setAttribute('font-size','52'); t2.textContent='REYES'; gMarks.appendChild(t2);
+    const t1=ce('text','map-title'); t1.setAttribute('x',MAP.cartouche.cx); t1.setAttribute('y',MAP.cartouche.cy-8);
+    t1.setAttribute('font-size','38'); t1.textContent='LOS TRES'; gMarks.appendChild(t1);
+    const t2=ce('text','map-title'); t2.setAttribute('x',MAP.cartouche.cx); t2.setAttribute('y',MAP.cartouche.cy+32);
+    t2.setAttribute('font-size','38'); t2.textContent='REYES'; gMarks.appendChild(t2);
   }
   gZoom.appendChild(gFills);
   gZoom.appendChild(gInks);
@@ -882,11 +923,18 @@ function reinforceComp(from,to,sel){
   b.inf+=sel.inf; b.arq+=sel.arq; b.cat+=sel.cat;
   Audio_.ok(); spendAction(); toast(`Refuerzo: ${compTot(sel)} → ${nombreReg(to)}`); afterAction(to);
 }
+const BATTLE_IMG = { inf:'batalla_inf.png', arq:'batalla_arq.png', cat:'batalla_cat.png' };
+function attackKind(sel){ return sel.cat>0 ? 'cat' : (sel.arq>sel.inf && sel.arq>0 ? 'arq' : 'inf'); }
 function combatTyped(from,to,sel){
+  const b=G.regions[to];
+  const s=statsAtaque(sel,b);
+  const win = Math.random() < s.pWin;                    // ← azar: el % puede salir mal
+  playBattle(attackKind(sel), win, ()=>resolveCombat(from,to,sel,win));
+}
+function resolveCombat(from,to,sel,win){
   const a=G.regions[from], b=G.regions[to];
   a.inf-=sel.inf; a.arq-=sel.arq; a.cat-=sel.cat;        // sale el destacamento elegido
   const s=statsAtaque(sel,b); const sentTot=compTot(sel);
-  const win = Math.random() < s.pWin;                    // ← azar: el % puede salir mal
   if(win){
     const ratio = s.A>0 ? s.D/s.A : 1;
     let frac = (1 - ratio*0.8) * (0.8 + 0.4*Math.random());   // bajas según lo ajustado + suerte
@@ -906,6 +954,21 @@ function combatTyped(from,to,sel){
   }
   spendAction();
   if(!checkVictory()) afterAction(to);
+}
+function playBattle(type, win, done){
+  const fx=$('battle-fx'), img=$('bf-img');
+  let finished=false, timers=[];
+  const finish=()=>{ if(finished) return; finished=true; timers.forEach(clearTimeout);
+    fx.classList.remove('show','phase1','phase2','impact'); fx.onpointerdown=null;
+    if(typeof done==='function') done(); };
+  img.onerror=finish;                                   // si falta el PNG, no bloquea el juego
+  img.src=BATTLE_IMG[type]||BATTLE_IMG.inf;
+  fx.className='show phase1';
+  timers.push(setTimeout(()=>fx.classList.add('impact'), 640));
+  timers.push(setTimeout(()=>{ img.src = win?'batalla_victoria.png':'batalla_derrota.png';
+    fx.classList.remove('phase1','impact'); fx.classList.add('phase2'); }, 940));
+  timers.push(setTimeout(finish, 1780));
+  fx.onpointerdown=finish;                               // tocar = saltar
 }
 function eliminateKing(k, exceptCapital){
   G.alive=G.alive.filter(x=>x!==k);
@@ -969,6 +1032,8 @@ function endGame(k){
   $('end-title').textContent = '¡'+KINGS[k].name+'!';
   $('end-sub').textContent = 'el reino tiene un solo trono';
   $('end-crown').style.color = k==='B' ? 'var(--muted)' : 'var(--accent)';
+  const ei=$('end-img'); ei.onerror=()=>{ ei.style.display='none'; };
+  ei.onload=()=>{ ei.style.display='block'; }; ei.src='fin_victoria.png';
   Audio_.victory();
   setTimeout(()=>$('end-overlay').classList.add('show'),500);
 }
@@ -1037,7 +1102,7 @@ window.addEventListener('load', ()=>{
   setTimeout(()=>{ const s=$('app-splash'); s.classList.add('hiding'); setTimeout(()=>s.style.display='none',650); }, 1400);
 });
 (async function showVersion(){
-  let v='reyes-v22';
+  let v='reyes-v24';
   try{ if('caches' in window){ const keys=await caches.keys(); const k=keys.find(x=>/^reyes-v/.test(x)); if(k)v=k; } }catch(e){}
   $('version-label').textContent=v.replace('reyes-','').toUpperCase()+' · SOCRAM GAMES';
 })();
