@@ -1054,6 +1054,7 @@ function restoreGame(s){
   G={ regions, kings, capOf, alive:s.alive, current:s.current, actions:s.actions, started:!!s.started, num:s.num, _gold:s.gold||{} };
   buildMap(); sel=null; adjSet=new Set(); mode='idle'; refreshMap(); updateHUD();
   showScreen('screen-game'); $('endturn').classList.remove('hidden'); Music.play('game');
+  autoZoomToActive();                       // mismo encuadre que al empezar turno
   toast('Partida reanudada');
 }
 // guarda al minimizar / ocultar la app
@@ -1099,10 +1100,11 @@ $('end-menu').onclick=()=>{ $('end-overlay').classList.remove('show'); gotoMenu(
    ============================================================ */
 window.addEventListener('load', ()=>{
   try{ if(loadSave()) $('b-continue').style.display='block'; }catch(e){}
+  if(!isStandalone()) $('b-install').style.display='block';   // vía de instalación siempre visible
   setTimeout(()=>{ const s=$('app-splash'); s.classList.add('hiding'); setTimeout(()=>s.style.display='none',650); }, 1400);
 });
 (async function showVersion(){
-  let v='reyes-v24';
+  let v='reyes-v26';
   try{ if('caches' in window){ const keys=await caches.keys(); const k=keys.find(x=>/^reyes-v/.test(x)); if(k)v=k; } }catch(e){}
   $('version-label').textContent=v.replace('reyes-','').toUpperCase()+' · SOCRAM GAMES';
 })();
