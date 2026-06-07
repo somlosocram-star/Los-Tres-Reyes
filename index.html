@@ -388,14 +388,14 @@ const MAP = {"w":1100,"h":1467,"img":"selenia.jpg","cartouche":{"cx":550,"cy":11
 
 /* ---------- parámetros de balance (todo ajustable) ---------- */
 const P = {
-  ORO_INICIAL: 250,            // menos oro de salida: cada decisión pesa
+  ORO_INICIAL: 350,            // algo más de respiro al arranque
   ACCIONES: 3,
   // --- economía: renta PLANA por rango (no por población) → frena la bola de nieve ---
-  RENTA:      [12, 26, 50],    // oro/turno por región (Pueblo / Comarca / Ciudad)
+  RENTA:      [18, 40, 75],    // oro/turno por región (Pueblo / Comarca / Ciudad)
   RENTA_RICA: 30,              // bono de oro/turno de una región "rica" (mina/puerto)
   N_RICAS: 3,                  // regiones ricas repartidas por el mapa
   // --- mantenimiento: el ejército cuesta cada turno (castiga acumular y sentarse) ---
-  MANT: { inf:0.15, arq:0.3, cat:3 },  // oro/turno por tropa
+  MANT: { inf:0.12, arq:0.25, cat:2.5 },  // oro/turno por tropa
   // --- segunda vía de victoria: dominio del mapa ---
   DOM_PCT: 0.6,                // controlar ≥60% de las regiones...
   DOM_TURNS: 3,                // ...durante 3 turnos propios seguidos → victoria
@@ -408,6 +408,7 @@ const P = {
   COSTE_ARQ: 25,                // arqueros: en comarcas y ciudades
   COSTE_CAT: 600,               // catapultas: solo en ciudades, caras y de mantenimiento alto
   CAP_CAT: 8,                   // tope de catapultas por ciudad
+  COSTE_EXPLORA: 20,            // explorar una región vecina desde una Ciudad (revela su fuerza vista)
   CAP_POB: 1800, CAP_ARMY: 200, // capitales iniciales (Ciudad)
   // población inicial DESIGUAL de las regiones neutrales (escalada por área):
   NEU_POB_MIN: 500, NEU_POB_MAX: 900,   // rango de población de los pueblos neutrales
@@ -420,6 +421,7 @@ const P = {
   AZAR: 0.20,                           // dispersión aleatoria del resultado (±)
   NITIDEZ: 3,                           // (en desuso con el combate por desgaste; se conserva)
   CHOQUE: 1.6,                          // intensidad del desgaste: <1 indeciso · >1.5 contundente
+  DESMORAL: 0.30,                       // bajas EXTRA de los supervivientes cuando el asalto no conquista
   GUARN: { media:150, fuerte:300 },     // umbrales de la etiqueta Débil/Media/Fuerte (niebla)
 };
 const GRADO = ['Pueblo','Comarca','Ciudad'];
@@ -465,11 +467,11 @@ function statsAtaque(sent, b){
 }
 const compTot = c => (c.inf||0)+(c.arq||0)+(c.cat||0);
 /* ---------- niebla: qué guarnición conoce el rey de turno ---------- */
-function knowsGarrison(r){ return r.owner===G.current || (r.intel && r.intel[G.current]); }
-function guarnLabel(r){ const n=tot(r); return n>=P.GUARN.fuerte?'Fuerte' : n>=P.GUARN.media?'Media' : 'Débil'; }
+function knowsGarrison(r){ return r.owner===G.current || (r.intel && r.intel[G.current]!=null); }
+function markIntel(r,k){ if(!r.intel) r.intel={}; r.intel[k]=tot(r); }   // foto de la fuerza en este instante
 function garrisonText(r){                       // texto de la chapita / panel según lo que sabe el rey
-  if(r.owner===G.current) return String(tot(r));               // propia: número exacto
-  if(r.intel && r.intel[G.current]) return '~'+(Math.round(tot(r)/10)*10); // ya combatida: aproximado
+  if(r.owner===G.current) return String(tot(r));               // propia: número exacto y vivo
+  if(r.intel && r.intel[G.current]!=null) return '~'+r.intel[G.current]; // lo que viste (puede estar desfasado)
   return '?';                                                   // sin explorar: fuerza DESCONOCIDA
 }
 // glifos de asentamiento por grado (pueblo / comarca / ciudad), tinta neutra
@@ -694,7 +696,7 @@ function buildMap(){
 function refreshMap(){
   MAP.regions.forEach(rd=>{
     const r=G.regions[rd.id], el=svgEls[rd.id], cx=el.cx, cy=el.cy;
-    el.fill.setAttribute('class','rf '+(r.owner?('own-'+r.owner):'neutral')+(mode==='target'&&adjSet.has(rd.id)?' tgt':''));
+    el.fill.setAttribute('class','rf '+(r.owner?('own-'+r.owner):'neutral')+(((mode==='target'||mode==='scout')&&adjSet.has(rd.id))?' tgt':''));
     el.border.setAttribute('class','rb'+(sel===rd.id?' sel':'')+(adjSet.has(rd.id)?' adj':''));
     // glifo del asentamiento según el grado (centrado en el centroide para no invadir vecinos)
     const g=GLYPH[r.grade], h=GLYPH_H[r.grade], w=h*g.a;
@@ -815,7 +817,9 @@ function showCurtain(k, neto, regs){
     const need=Math.ceil(P.DOM_PCT*G.regions.length), have=G.dom?(G.dom[k]||0):0;
     if(regs>=need && have>0) sub += ` · dominio ${have}/${P.DOM_TURNS}`;
   }
-  $('cur-sub').textContent = sub;
+  const rep = (G._aiReports&&G._aiReports.length) ? `<br><small style="color:var(--muted)">${G._aiReports.join('<br>')}</small>` : '';
+  G._aiReports=[];
+  $('cur-sub').innerHTML = sub + rep;
   $('cur-crown').style.color = k==='B' ? 'var(--muted)' : 'var(--accent)';
   $('curtain').classList.add('show');
 }
@@ -832,6 +836,9 @@ function updateHUD(){
 
 function endTurn(){
   if(checkVictory()) return;
+  // parte de lo que hizo la máquina, para que el humano lo vea en la cortina
+  if(isAI(G.current)){ const lg=G._ailog||[]; (G._aiReports||(G._aiReports=[])).push(
+    `${KINGS[G.current].name}: ${lg.length?lg.join(' · '):'sin novedades'}`); }
   // siguiente rey vivo
   const order=G.kings; let idx=order.indexOf(G.current);
   for(let n=0;n<order.length;n++){ idx=(idx+1)%order.length; if(G.alive.includes(order[idx])){ G.current=order[idx]; break; } }
@@ -852,6 +859,10 @@ function onRegionTap(id){
   const r=G.regions[id];
   if(mode==='target'){
     if(adjSet.has(id)){ resolveMoveAttack(sel, id); return; }
+    // tocar otra cosa: reseleccionar
+  }
+  if(mode==='scout'){
+    if(adjSet.has(id)){ doScout(sel, id); return; }
     // tocar otra cosa: reseleccionar
   }
   sel=id; mode='sel';
@@ -884,21 +895,27 @@ function openSheet(id){
     const canRecruit = G.actions>0 && G._gold[G.current]>=minCoste && (room>0 || (r.grade===2 && r.cat<P.CAP_CAT));
     const canUpgrade = G.actions>0 && r.grade<2 && G._gold[G.current]>=P.COSTE_MEJORA[r.grade];
     const canMove    = G.actions>0 && tot(r)>1;
+    const scoutTargets = MAP.regions[id].adj.filter(j=>G.regions[j].owner!==G.current);
+    const canScout   = r.grade===2 && G.actions>0 && G._gold[G.current]>=P.COSTE_EXPLORA && scoutTargets.length>0;
     html += `<div class="sheet-actions">
       <button class="actbtn" id="a-recruit" ${canRecruit?'':'disabled'}><img src="btn_recruit.png" alt="Reclutar tropas"><span class="cap">según la región</span></button>
       <button class="actbtn" id="a-move" ${canMove?'':'disabled'}><img src="btn_move.png" alt="Mover · atacar"><span class="cap">a región vecina</span></button>
       <button class="actbtn" id="a-upgrade" ${canUpgrade?'':'disabled'}><img src="btn_upgrade.png" alt="Mejorar"><span class="cap">${r.grade<2?P.COSTE_MEJORA[r.grade]+' oro':'máx.'}</span></button>
     </div>`;
+    if(r.grade===2){
+      html += `<button class="btn ghost" id="a-scout" ${canScout?'':'disabled'} style="margin-top:.5rem">Explorar región vecina · ${P.COSTE_EXPLORA} oro</button>`;
+    }
   } else {
     html += `<div class="hint">${ownerTxt} · selecciona una región tuya adyacente para atacar</div>`;
   }
   $('sh-body').innerHTML=html;
   $('sheet').classList.add('up');
   if(mine){
-    const rb=$('a-recruit'), mb=$('a-move'), ub=$('a-upgrade');
+    const rb=$('a-recruit'), mb=$('a-move'), ub=$('a-upgrade'), sb=$('a-scout');
     if(rb&&!rb.disabled) rb.onclick=()=>openRecruitChooser(id);
     if(mb&&!mb.disabled) mb.onclick=()=>enterTargetMode(id);
     if(ub&&!ub.disabled) ub.onclick=()=>doUpgrade(id);
+    if(sb&&!sb.disabled) sb.onclick=()=>enterScoutMode(id);
   }
 }
 
@@ -949,6 +966,22 @@ function enterTargetMode(id){
   refreshMap(); $('sheet').classList.remove('up');
   toast('Toca una región vecina resaltada'); Audio_.tap();
 }
+/* ---------- modo explorar (desde una Ciudad) ---------- */
+function enterScoutMode(id){
+  mode='scout'; sel=id;
+  adjSet=new Set(MAP.regions[id].adj.filter(j=>G.regions[j].owner!==G.current));  // solo vecinas no propias
+  refreshMap(); $('sheet').classList.remove('up');
+  toast(`Toca una región vecina para explorarla · ${P.COSTE_EXPLORA} oro`); Audio_.tap();
+}
+function doScout(from, to){
+  if(G._gold[G.current] < P.COSTE_EXPLORA){ toast('Sin oro para explorar'); deselect(); return; }
+  const b=G.regions[to];
+  G._gold[G.current]-=P.COSTE_EXPLORA;
+  markIntel(b, G.current);                       // foto de su fuerza actual (a partir de ahora puede caducar)
+  Audio_.ok(); spendAction();
+  toast(`Explorada ${nombreReg(to)} · fuerza vista ~${b.intel[G.current]}`);
+  mode='sel'; afterAction(from);                 // vuelve al panel de la ciudad para encadenar
+}
 function resolveMoveAttack(from, to){
   const a=G.regions[from], b=G.regions[to];
   if(tot(a)-1<1){ toast('Sin tropas para mover'); return; }
@@ -982,15 +1015,18 @@ function composeSheet(from, to, friendly){
     if(friendly){ info.textContent=`Refuerzo · llegan ${compTot(sel)} (sin pérdidas)`; return; }
     const sent=compTot(sel), s=statsAtaque(sel,b);
     if(!knowsGarrison(b)){
-      info.innerHTML=`Envías <b>${sent}</b> · guarnición rival <b>desconocida</b><br><small>la niebla la oculta — atacas sin saber su fuerza</small>`;
+      info.innerHTML=`Envías <b>${sent}</b> · guarnición rival <b>desconocida</b><br><small>atacas a ciegas — si no rompes, repliegas desmoralizado (−${Math.round(P.DESMORAL*100)}%)</small>`;
       return;
     }
-    const defN=tot(b), adv=(s.A+s.D)>0? s.A/(s.A+s.D):0.5, I=P.CHOQUE;
-    const dLoss=Math.min(defN, Math.round(defN*Math.min(1, adv*I)));
+    const seen=b.intel[G.current], muro=s.muro, A=s.A;     // foto: puede estar desfasada
+    const Dest=seen*P.DEF.inf*muro, adv=(A+Dest)>0? A/(A+Dest):0.5, I=P.CHOQUE;
+    const dLoss=Math.min(seen, Math.round(seen*Math.min(1, adv*I)));
     const aLoss=Math.min(sent, Math.round(sent*Math.min(1, (1-adv)*I)));
-    const muroTxt = s.muro>1.02 ? ` · muralla ×${s.muro.toFixed(2)}` : '';
-    const lectura = dLoss>=defN ? ((sent-aLoss)>0?'tomas la región':'aniquilación mutua') : 'no rompes la defensa';
-    info.innerHTML=`Fuerza <b>${Math.round(s.A)}</b> vs <b>${Math.round(s.D)}</b>${muroTxt}<br>estimado: rival −${dLoss} · tú −${aLoss} · ${lectura} <small>±azar</small>`;
+    const muroTxt = muro>1.02 ? ` · muralla ×${muro.toFixed(2)}` : '';
+    const rompe = dLoss>=seen;
+    const lectura = rompe ? ((sent-aLoss)>0?'tomas la región':'aniquilación mutua')
+                          : `no rompes · desmoralización −${Math.round(P.DESMORAL*100)}%`;
+    info.innerHTML=`Tu fuerza <b>${Math.round(A)}</b> · rival visto <b>~${seen}</b>${muroTxt}<br>estimado: rival −${dLoss} · tú −${aLoss} · ${lectura} <small>(según lo que viste)</small>`;
   };
   const setQ=(t,v)=>{ const otros=compTot(sel)-sel[t]; const cap=Math.min(avail[t], maxTot-otros);
     const nv=Math.max(0,Math.min(cap,Math.round(v))); if(nv!==sel[t]){ sel[t]=nv; upd(); Audio_.tap(); } };
@@ -1031,7 +1067,7 @@ function computeCombat(from,to,sel){
 function applyCombatState(res){            // muta el estado y PINTA (se ejecuta en el impacto)
   const a=G.regions[res.from], b=G.regions[res.to];
   a.inf-=res.sel.inf; a.arq-=res.sel.arq; a.cat-=res.sel.cat;     // sale el destacamento
-  if(b.intel) b.intel[G.current]=true;                            // ya conoces su guarnición
+  markIntel(b, G.current);                                       // foto de la guarnición con la que te topaste
   takeProp(b, res.defLoss);                                       // bajas del defensor
   const surv=scaleToTotal(res.sel, Math.max(0,res.survN));
   res._wasCapital=isCapital(res.to); res._loser=b.owner;
@@ -1041,7 +1077,10 @@ function applyCombatState(res){            // muta el estado y PINTA (se ejecuta
   } else if(res.defLeft<=0){
     b.owner=null;                                                  // aniquilación mutua → neutral
   } else {
-    addComp(a, surv);                                              // no rompes la defensa: repliegue al origen
+    const desmor = Math.round(Math.max(0,res.survN) * P.DESMORAL);   // moral rota: deserciones extra
+    const vuelven = Math.max(0, res.survN - desmor);
+    addComp(a, scaleToTotal(res.sel, vuelven));                        // repliegue al origen, ya mermado
+    res._desmor = desmor; res._vuelven = vuelven;
   }
   spendAction();
   refreshMap(); updateHUD(); saveGame();                           // color al instante
@@ -1054,7 +1093,7 @@ function finishCombat(res){                // sonido + mensaje + siguiente paso 
   } else if(res.defLeft<=0){
     Audio_.lose(); toast(`${nombreReg(res.to)} queda arrasada · sin ocupantes`);
   } else {
-    Audio_.lose(); toast(`Asalto a ${nombreReg(res.to)} · enemigo −${res.defLoss}, tus bajas −${res.atkLoss}`);
+    Audio_.lose(); toast(`Asalto a ${nombreReg(res.to)} rechazado · rival −${res.defLoss} · tus bajas −${res.atkLoss}, desmoralizados −${res._desmor||0}`);
   }
   if(!checkVictory()){
     if(res.captured) deselect();          // se ve tuya al instante; reforzar es opcional (tócala si quieres)
@@ -1162,7 +1201,7 @@ const AI = {
   recruitCap: 40,        // tope de tropas por reclutamiento
 };
 function beginAITurn(k){
-  aiBusy=true; $('endturn').classList.add('hidden'); closeSheet();
+  aiBusy=true; G._ailog=[]; $('endturn').classList.add('hidden'); closeSheet();
   $('cur-name').textContent=KINGS[k].name;
   $('cur-sub').textContent='la máquina mueve…';
   $('cur-crown').style.color = k==='B' ? 'var(--muted)' : 'var(--accent)';
@@ -1179,31 +1218,31 @@ function aiPlay(k){
   setTimeout(()=>aiPlay(k), AI.pause);
 }
 function aiDo(mv,k){
-  const name=nombreReg(mv.to!=null?mv.to:mv.at);
+  const name=nombreReg(mv.to!=null?mv.to:mv.at); const log=G._ailog||(G._ailog=[]);
   if(mv.type==='attack'){
     const res=computeCombat(mv.from, mv.to, mv.sel);
     applyCombatState(res);                       // muta + pinta + gasta acción + guarda
-    if(res.captured) toast(`${KINGS[k].name} toma ${name}`);
-    else if(res.defLeft<=0) toast(`${KINGS[k].name} arrasa ${name}`);
-    else toast(`${KINGS[k].name} asalta ${name} · rival −${res.defLoss}`);
+    if(res.captured){ toast(`${KINGS[k].name} toma ${name}`); log.push(`tomó ${name}`); }
+    else if(res.defLeft<=0){ toast(`${KINGS[k].name} arrasa ${name}`); log.push(`arrasó ${name}`); }
+    else { toast(`${KINGS[k].name} asalta ${name} · rival −${res.defLoss}`); log.push(`asaltó ${name} (rechazado, desmoralizado −${res._desmor||0})`); }
   } else if(mv.type==='recruit'){
     const r=G.regions[mv.at]; r[mv.t]+=mv.n; G._gold[k]-=mv.n*mv.coste;
     spendAction(); refreshMap(); updateHUD(); saveGame();
-    toast(`${KINGS[k].name} recluta ${mv.n} en ${name}`);
+    toast(`${KINGS[k].name} recluta ${mv.n} en ${name}`); log.push(`reclutó ${mv.n} en ${name}`);
   } else if(mv.type==='upgrade'){
     const r=G.regions[mv.at]; G._gold[k]-=P.COSTE_MEJORA[r.grade]; r.grade++;
     r.pop=Math.min(P.POB_MAX[r.grade], Math.max(r.pop, Math.round(P.POB_MAX[r.grade]*0.55)));
     spendAction(); refreshMap(); updateHUD(); saveGame();
-    toast(`${KINGS[k].name} mejora ${name} → ${GRADO[r.grade]}`);
+    toast(`${KINGS[k].name} mejora ${name} → ${GRADO[r.grade]}`); log.push(`mejoró ${name}`);
   }
 }
-function aiKnown(to,k){ const r=G.regions[to]; return r.owner===k || (r.intel && r.intel[k]); }
+function aiKnown(to,k){ const r=G.regions[to]; return r.owner===k || (r.intel && r.intel[k]!=null); }
 function aiEvalAttack(sel, to, k){               // estimación determinista (suerte media) respetando la niebla
   const r=G.regions[to], A=poderAtk(sel), sentN=compTot(sel);
   const known=aiKnown(to,k);
-  const defN = known ? tot(r) : AI.estDef[r.grade];
+  const defN = known ? r.intel[k] : AI.estDef[r.grade];   // foto conocida o estimación por rango
   const muro = known ? murallaFactor(r, sel.cat) : P.BONUS[r.grade];
-  const D = (known ? poderDef(r) : defN*P.DEF.inf) * muro;
+  const D = defN*P.DEF.inf * muro;
   const adv=(A+D)>0? A/(A+D):0.5, I=P.CHOQUE;
   const defLoss=Math.min(defN, defN*Math.min(1,adv*I));
   const atkLoss=Math.min(sentN, sentN*Math.min(1,(1-adv)*I));
@@ -1277,13 +1316,16 @@ function aiUpgradeSpot(k, gold){
 function saveGame(){ if(!G||!G.alive||G.alive.length<=1) return;
   try{ localStorage.setItem('reyes_save', JSON.stringify({ num:G.num, current:G.current, alive:G.alive,
     actions:G.actions, started:G.started, gold:G._gold, dom:G.dom||{}, ai:(G.ai||[]).join(''),
-    regions:G.regions.map(r=>({o:r.owner,g:r.grade,p:r.pop,i:r.inf,a:r.arq,c:r.cat,R:r.rica?1:0,k:Object.keys(r.intel||{}).filter(x=>r.intel[x]).join('')})) })); }catch(e){} }
+    regions:G.regions.map(r=>({o:r.owner,g:r.grade,p:r.pop,i:r.inf,a:r.arq,c:r.cat,R:r.rica?1:0,I:r.intel||{}})) })); }catch(e){} }
 function clearSave(){ try{ localStorage.removeItem('reyes_save'); }catch(e){} }
 function loadSave(){ try{ return JSON.parse(localStorage.getItem('reyes_save')||'null'); }catch(e){ return null; } }
 function restoreGame(s){
   const kings = s.num===3?['W','B','G']:['W','B'];
   const capOf={W:CAP.W,B:CAP.B}; if(s.num===3)capOf.G=CAP.G;
-  const regions = MAP.regions.map((rd,i)=>{ const d=s.regions[i]||{}; const intel={}; (d.k||'').split('').forEach(x=>{ if(x) intel[x]=true; });
+  const regions = MAP.regions.map((rd,i)=>{ const d=s.regions[i]||{};
+    let intel=d.I;
+    if(!intel && d.k){ intel={}; const t=(d.i||0)+(d.a||0)+(d.c||0); d.k.split('').forEach(x=>{ if(x) intel[x]=t; }); } // guardados viejos
+    intel=intel||{};
     return {owner:(d.o==null?null:d.o),grade:d.g||0,pop:d.p||0,inf:d.i||0,arq:d.a||0,cat:d.c||0,intel,rica:!!d.R}; });
   G={ regions, kings, capOf, alive:s.alive, current:s.current, actions:s.actions, started:!!s.started, num:s.num, _gold:s.gold||{}, dom:s.dom||{}, ai:(s.ai||'').split('').filter(Boolean) };
   buildMap(); sel=null; adjSet=new Set(); mode='idle'; refreshMap(); updateHUD();
@@ -1352,7 +1394,7 @@ window.addEventListener('load', ()=>{
   setTimeout(()=>{ const s=$('app-splash'); s.classList.add('hiding'); setTimeout(()=>s.style.display='none',650); }, 1400);
 });
 (async function showVersion(){
-  let v='reyes-v29';
+  let v='reyes-v32';
   try{ if('caches' in window){ const keys=await caches.keys(); const k=keys.find(x=>/^reyes-v/.test(x)); if(k)v=k; } }catch(e){}
   $('version-label').textContent=v.replace('reyes-','').toUpperCase()+' · SOCRAM GAMES';
 })();
