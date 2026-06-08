@@ -396,11 +396,11 @@ const MAP = {"w":1100,"h":1467,"img":"selenia.jpg","cartouche":{"cx":550,"cy":11
 
 /* ---------- parámetros de balance (todo ajustable) ---------- */
 const P = {
-  ORO_INICIAL: 450,            // más respiro al arranque
+  ORO_INICIAL: 500,            // más respiro al arranque
   ACCIONES: 3,
   // --- economía: renta PLANA por rango (no por población) → frena la bola de nieve ---
-  RENTA:      [25, 55, 100],   // oro/turno por región (Pueblo / Comarca / Ciudad)
-  RENTA_RICA: 30,              // bono de oro/turno de una región "rica" (mina/puerto)
+  RENTA:      [35, 70, 120],   // oro/turno por región (Pueblo / Comarca / Ciudad)
+  RENTA_RICA: 80,              // bono de oro/turno de una región "rica" (mina): objetivo que compensa la campaña
   N_RICAS: 3,                  // regiones ricas repartidas por el mapa
   // --- mantenimiento: el ejército cuesta cada turno (castiga acumular y sentarse) ---
   MANT: { inf:0.12, arq:0.20, cat:2.5 },  // oro/turno por tropa
@@ -477,16 +477,21 @@ function statsAtaque(sent, b){
 }
 const compTot = c => (c.inf||0)+(c.arq||0)+(c.cat||0);
 /* ---------- niebla: qué guarnición conoce el rey de turno ---------- */
-function knowsGarrison(r){ return r.owner===G.current || (r.intel && r.intel[G.current]); }
+function viewer(){               // desde qué rey se ve la niebla: el que juega, salvo que sea la IA (entonces, el humano que observa)
+  if(G && isAI(G.current)){ const h=G.kings.find(k=>!isAI(k) && G.alive.includes(k)); if(h) return h; }
+  return G ? G.current : null;
+}
+function knowsGarrison(r){ const v=viewer(); return r.owner===v || (r.intel && r.intel[v]); }
 function markIntel(r,k){ if(!r.intel) r.intel={}; r.intel[k]={i:r.inf, a:r.arq, c:r.cat}; }   // foto de la COMPOSICIÓN en este instante
 function intelTot(o){ return o ? (o.i||0)+(o.a||0)+(o.c||0) : 0; }
 function tiroBonus(atkArq, defArq, defTot){      // ventaja de tiro: bonus de ataque por superioridad de arqueros (escala con la diferencia)
   const sup=(atkArq||0)-(defArq||0);
   return sup>0 ? 1+Math.min(P.BONUS_ARQ, sup/Math.max(1,defTot)) : 1;
 }
-function garrisonText(r){                       // texto de la chapita / panel según lo que sabe el rey
-  if(r.owner===G.current) return String(tot(r));               // propia: número exacto y vivo
-  const o = r.intel && r.intel[G.current];
+function garrisonText(r){                       // texto de la chapita / panel según lo que sabe el OBSERVADOR
+  const v=viewer();
+  if(r.owner===v) return String(tot(r));                       // propia: número exacto y vivo
+  const o = r.intel && r.intel[v];
   if(o) return '~'+intelTot(o);                                // lo que viste (puede estar desfasado)
   return '?';                                                   // sin explorar: fuerza DESCONOCIDA
 }
@@ -918,7 +923,7 @@ function openSheet(id){
     <div class="stat"><div class="v">${r.pop}</div><div class="k">población</div></div>
     <div class="stat"><div class="v">×${P.BONUS[r.grade]}</div><div class="k">defensa</div></div>
   </div>
-  <div class="hint comp">${ mine ? compTxt(r) : (r.intel&&r.intel[G.current] ? compTxtSeen(r.intel[G.current]) : 'composición desconocida') }</div>
+  <div class="hint comp">${ mine ? compTxt(r) : (r.intel&&r.intel[viewer()] ? compTxtSeen(r.intel[viewer()]) : 'composición desconocida') }</div>
   ${ r.rica ? `<div class="hint" style="color:#b8860b">◆ Mina · +${P.RENTA_RICA} oro/turno para quien la controle</div>` : '' }`;
   if(mine){
     const recCap = Math.floor(r.pop*P.RECLUTA_PCT);
@@ -1444,7 +1449,7 @@ window.addEventListener('load', ()=>{
   setTimeout(()=>{ const s=$('app-splash'); s.classList.add('hiding'); setTimeout(()=>s.style.display='none',650); }, 1400);
 });
 (async function showVersion(){
-  let v='reyes-v38';
+  let v='reyes-v39';
   try{ if('caches' in window){ const keys=await caches.keys(); const k=keys.find(x=>/^reyes-v/.test(x)); if(k)v=k; } }catch(e){}
   $('version-label').textContent=v.replace('reyes-','').toUpperCase()+' · SOCRAM GAMES';
 })();
