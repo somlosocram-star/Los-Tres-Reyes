@@ -222,6 +222,14 @@ body:not(.light) .board-img{filter:brightness(.86) contrast(1.02);} /* atenúa u
   background:linear-gradient(transparent,rgba(15,10,6,.82));text-shadow:0 2px 6px rgba(0,0,0,.7);opacity:0;}
 #battle-fx .bf-banner.show{animation:bfBanner .5s ease forwards;}
 #battle-fx .bf-banner.win{color:#e8c887;}
+#battle-fx .bf-detail{position:absolute;left:0;right:0;bottom:0;padding:.8rem .8rem .9rem;text-align:center;
+  background:linear-gradient(transparent,rgba(12,10,7,.88) 28%);color:#efe6d2;
+  font-family:'IBM Plex Mono',monospace;font-size:.72rem;line-height:1.6;opacity:0;transition:opacity .45s ease;}
+#battle-fx .bf-detail.show{opacity:1;}
+#battle-fx .bf-h{display:inline-block;margin-bottom:.15rem;font-family:'Cinzel',serif;font-size:1.1rem;letter-spacing:1px;}
+#battle-fx .bf-h.win{color:#e8c887;}
+#battle-fx .bf-bon{color:#e8c887;}
+#battle-fx .bf-tap{display:block;margin-top:.4rem;opacity:.55;font-size:.64rem;letter-spacing:1px;}
 @keyframes bfIn{0%{transform:scale(.5);opacity:0;}100%{transform:scale(1);opacity:1;}}
 @keyframes bfKen{0%{transform:scale(1);}100%{transform:scale(1.14);}}
 @keyframes bfShake{0%,100%{transform:translate(0,0);}15%{transform:translate(-7px,5px);}35%{transform:translate(8px,-4px);}55%{transform:translate(-6px,-5px);}75%{transform:translate(5px,6px);}}
@@ -308,7 +316,7 @@ body.light .overlay{background:rgba(40,38,32,.4);}
 </div>
 
 <!-- animación de batalla -->
-<div id="battle-fx" aria-hidden="true"><div class="bf-card"><img id="bf-img" alt=""><img id="bf-img2" alt=""><div class="bf-vig"></div><div id="bf-banner" class="bf-banner"></div></div></div>
+<div id="battle-fx" aria-hidden="true"><div class="bf-card"><img id="bf-img" alt=""><img id="bf-img2" alt=""><div class="bf-vig"></div><div id="bf-banner" class="bf-banner"></div><div id="bf-detail" class="bf-detail"></div></div></div>
 
 <!-- panel contextual -->
 <div id="sheet">
@@ -388,14 +396,14 @@ const MAP = {"w":1100,"h":1467,"img":"selenia.jpg","cartouche":{"cx":550,"cy":11
 
 /* ---------- parámetros de balance (todo ajustable) ---------- */
 const P = {
-  ORO_INICIAL: 350,            // algo más de respiro al arranque
+  ORO_INICIAL: 450,            // más respiro al arranque
   ACCIONES: 3,
   // --- economía: renta PLANA por rango (no por población) → frena la bola de nieve ---
-  RENTA:      [18, 40, 75],    // oro/turno por región (Pueblo / Comarca / Ciudad)
+  RENTA:      [25, 55, 100],   // oro/turno por región (Pueblo / Comarca / Ciudad)
   RENTA_RICA: 30,              // bono de oro/turno de una región "rica" (mina/puerto)
   N_RICAS: 3,                  // regiones ricas repartidas por el mapa
   // --- mantenimiento: el ejército cuesta cada turno (castiga acumular y sentarse) ---
-  MANT: { inf:0.12, arq:0.25, cat:2.5 },  // oro/turno por tropa
+  MANT: { inf:0.12, arq:0.20, cat:2.5 },  // oro/turno por tropa
   // --- segunda vía de victoria: dominio del mapa ---
   DOM_PCT: 0.6,                // controlar ≥60% de las regiones...
   DOM_TURNS: 3,                // ...durante 3 turnos propios seguidos → victoria
@@ -405,18 +413,20 @@ const P = {
   BONUS:     [1.0, 1.3, 1.6],   // bono de defensa por grado
   COSTE_MEJORA: [400, 1100],   // Pueblo→Comarca, Comarca→Ciudad (ciudad desbloquea catapultas + máx. población)
   COSTE_INF: 5,                 // infantería: barata, en cualquier región
-  COSTE_ARQ: 25,                // arqueros: en comarcas y ciudades
+  COSTE_ARQ: 14,                // arqueros: tropa DEFENSIVA (mucha defensa, poco ataque); en comarcas y ciudades
   COSTE_CAT: 600,               // catapultas: solo en ciudades, caras y de mantenimiento alto
   CAP_CAT: 8,                   // tope de catapultas por ciudad
-  COSTE_EXPLORA: 20,            // explorar una región vecina desde una Ciudad (revela su fuerza vista)
+  COSTE_EXPLORA: 15,            // explorar una región vecina desde una Ciudad (revela su fuerza vista)
   CAP_POB: 1800, CAP_ARMY: 200, // capitales iniciales (Ciudad)
   // población inicial DESIGUAL de las regiones neutrales (escalada por área):
   NEU_POB_MIN: 500, NEU_POB_MAX: 900,   // rango de población de los pueblos neutrales
   NEU_COMARCAS: 7,                      // comarcas neutrales (repartidas por el mapa)
   COM_POB_MIN: 1000, COM_POB_MAX: 1400, // rango de población de las comarcas neutrales
   // --- combate por tipos ---
-  ATK:  { inf:1.0, arq:3.0, cat:1.6 },  // peso de ataque por tipo (arqueros pegan fuerte)
-  DEF:  { inf:1.0, arq:1.3, cat:1.0 },  // peso de defensa por tipo
+  ATK:  { inf:1.0, arq:1.5, cat:1.6 },  // peso de ataque por tipo (los arqueros asaltan flojo)
+  DEF:  { inf:1.0, arq:3.0, cat:1.0 },  // peso de defensa por tipo (arqueros: muro, brutales tras muralla)
+  BONUS_ARQ: 0.35,                      // ventaja de tiro: bonus máx. de ataque por superioridad de arqueros
+  ARQ_FRAC_MAX: 0.35,                   // fracción máx. de arqueros en la guarnición de un neutral (desigual)
   CAT_ROMPE: 0.18,                      // cada catapulta anula 18% de la muralla (asedio)
   AZAR: 0.20,                           // dispersión aleatoria del resultado (±)
   NITIDEZ: 3,                           // (en desuso con el combate por desgaste; se conserva)
@@ -467,13 +477,20 @@ function statsAtaque(sent, b){
 }
 const compTot = c => (c.inf||0)+(c.arq||0)+(c.cat||0);
 /* ---------- niebla: qué guarnición conoce el rey de turno ---------- */
-function knowsGarrison(r){ return r.owner===G.current || (r.intel && r.intel[G.current]!=null); }
-function markIntel(r,k){ if(!r.intel) r.intel={}; r.intel[k]=tot(r); }   // foto de la fuerza en este instante
+function knowsGarrison(r){ return r.owner===G.current || (r.intel && r.intel[G.current]); }
+function markIntel(r,k){ if(!r.intel) r.intel={}; r.intel[k]={i:r.inf, a:r.arq, c:r.cat}; }   // foto de la COMPOSICIÓN en este instante
+function intelTot(o){ return o ? (o.i||0)+(o.a||0)+(o.c||0) : 0; }
+function tiroBonus(atkArq, defArq, defTot){      // ventaja de tiro: bonus de ataque por superioridad de arqueros (escala con la diferencia)
+  const sup=(atkArq||0)-(defArq||0);
+  return sup>0 ? 1+Math.min(P.BONUS_ARQ, sup/Math.max(1,defTot)) : 1;
+}
 function garrisonText(r){                       // texto de la chapita / panel según lo que sabe el rey
   if(r.owner===G.current) return String(tot(r));               // propia: número exacto y vivo
-  if(r.intel && r.intel[G.current]!=null) return '~'+r.intel[G.current]; // lo que viste (puede estar desfasado)
+  const o = r.intel && r.intel[G.current];
+  if(o) return '~'+intelTot(o);                                // lo que viste (puede estar desfasado)
   return '?';                                                   // sin explorar: fuerza DESCONOCIDA
 }
+function compTxtSeen(o){ const p=[]; if(o.i)p.push(`~${o.i} inf`); if(o.a)p.push(`~${o.a} arq`); if(o.c)p.push(`~${o.c} cat`); return p.join(' · ')||'guarnición mínima'; }
 // glifos de asentamiento por grado (pueblo / comarca / ciudad), tinta neutra
 const GLYPH = [ {src:'glyph_pueblo.png', a:554/422}, {src:'glyph_comarca.png', a:826/550}, {src:'glyph_ciudad.png', a:942/497} ];
 const GLYPH_H = [30, 42, 52];   // alturas en viewBox (tablero isla 1100)
@@ -588,14 +605,25 @@ function newGame(numKings, nAI){
     if(best<0)break; comSel.push(best);
   }
   const comarcas = new Set(comSel);
-  // regiones "ricas" (mina / puerto): recursos repartidos → razón para maniobrar y expandirse
-  const richSel=[], rseeds=[...caps];
-  while(richSel.length < Math.min(P.N_RICAS, villages.length)){
-    let best=-1,bd=-1;
-    for(const i of villages){ if(richSel.includes(i))continue;
-      const md=Math.min(...rseeds.concat(richSel).map(s=>d2(i,s)));
-      if(md>bd){ bd=md; best=i; } }
-    if(best<0)break; richSel.push(best);
+  // regiones "ricas" (mina): repartidas de forma EQUILIBRADA entre los reyes (misma cantidad cerca de cada capital)
+  const isAdjCap = i => caps.some(c=> MAP.regions[i].adj.includes(c));
+  const nearCap  = i => { let bc=caps[0],bd=Infinity; for(const c of caps){ const d=d2(i,c); if(d<bd){bd=d;bc=c;} } return bc; };
+  const cnt={}; caps.forEach(c=>cnt[c]=0);
+  const richSel=[], nMinas=Math.min(P.N_RICAS, numKings, villages.length);  // una por reino → reparto justo
+  while(richSel.length < nMinas){
+    const minC = Math.min(...caps.map(c=>cnt[c]));
+    let best=-1,bestScore=-Infinity,bestCap=null;
+    const consider=(allowAdj,balance)=>{
+      for(const i of villages){ if(richSel.includes(i)) continue; if(!allowAdj && isAdjCap(i)) continue;
+        const nc=nearCap(i); if(balance && cnt[nc]>minC) continue;          // solo regiones del rey con menos minas
+        const ds=caps.map(c=>Math.sqrt(d2(i,c))).sort((x,y)=>x-y);
+        const equ=ds.length>1?ds[1]-ds[0]:0, dCap=ds[0];
+        const dMine=richSel.length?Math.sqrt(Math.min(...richSel.map(m=>d2(i,m)))):1e6;
+        const score=dCap + 0.5*Math.min(dMine,dCap) - 0.8*equ;             // lejos de capitales, separadas y algo equidistantes
+        if(score>bestScore){ bestScore=score; best=i; bestCap=nc; } }
+    };
+    consider(false,true); if(best<0) consider(true,true); if(best<0) consider(true,false);
+    if(best<0) break; richSel.push(best); cnt[bestCap]++;
   }
   const ricas = new Set(richSel);
   const puebloIds = villages.filter(i=>!comarcas.has(i));
@@ -603,13 +631,16 @@ function newGame(numKings, nAI){
   const rP=range(puebloIds), rC=range([...comarcas]);
   const normP=i=>(areas[i]-rP.mn)/rP.sp, normC=i=>(areas[i]-rC.mn)/rC.sp;
 
+  const arqFrac = ()=> Math.random()*P.ARQ_FRAC_MAX;   // proporción de arqueros, DESIGUAL por región (oculta hasta explorar)
   const regions = MAP.regions.map((rd,i)=>{
     if(comarcas.has(i)){
       const pop=Math.round(P.COM_POB_MIN + normC(i)*(P.COM_POB_MAX-P.COM_POB_MIN));
-      return {owner:null, grade:1, pop, inf:Math.round(pop*0.20), arq:0, cat:0, rica:ricas.has(i)}; // ~20% de la población
+      const total=Math.round(pop*0.20), arq=Math.round(total*arqFrac());      // ~20% de la población
+      return {owner:null, grade:1, pop, inf:total-arq, arq, cat:0, rica:ricas.has(i)};
     }
     const pop=Math.round(P.NEU_POB_MIN + normP(i)*(P.NEU_POB_MAX-P.NEU_POB_MIN));
-    return {owner:null, grade:0, pop, inf:Math.round(pop*0.16), arq:0, cat:0, rica:ricas.has(i)};   // ~16% de la población
+    const total=Math.round(pop*0.16), arq=Math.round(total*arqFrac());        // ~16% de la población
+    return {owner:null, grade:0, pop, inf:total-arq, arq, cat:0, rica:ricas.has(i)};
   });
   // capitales de reyes (Ciudad)
   for(const k of kings){ const r=regions[capOf[k]]; r.owner=k; r.grade=2; r.pop=P.CAP_POB; r.inf=P.CAP_ARMY; r.arq=0; r.cat=0; }
@@ -672,8 +703,8 @@ function buildMap(){
     const name=ce('text', cap?'r-name capn':'r-name'); name.setAttribute('x',rd.cx); name.textContent=nombreReg(rd.id); gMarks.appendChild(name);
     const chip=ce('rect','chapita'); chip.setAttribute('rx','8'); chip.setAttribute('height','30'); gMarks.appendChild(chip);
     const lab=ce('text','r-num'); lab.setAttribute('x',rd.cx); gMarks.appendChild(lab);
-    const rich=ce('circle'); rich.setAttribute('r','8'); rich.setAttribute('fill','#9e2b22');
-    rich.setAttribute('stroke','#f3e9d2'); rich.setAttribute('stroke-width','1.8'); rich.style.display='none'; gMarks.appendChild(rich);
+    const rich=ce('circle'); rich.setAttribute('r','8'); rich.setAttribute('fill','#d8b24a');
+    rich.setAttribute('stroke','#3a2c16'); rich.setAttribute('stroke-width','1.8'); rich.style.display='none'; gMarks.appendChild(rich);
     const h=ce('path','hit'); h.setAttribute('d',rd.d); h.dataset.id=rd.id; gHit.appendChild(h);
     svgEls[rd.id]={fill:f, border:b, label:lab, name, gly, ring, chip, rich, cap, cx:rd.cx, cy:rd.cy};
   });
@@ -712,8 +743,8 @@ function refreshMap(){
     // anillo rojo solo en capitales (el trono); sin corona
     if(el.cap){ el.ring.style.display=''; el.ring.setAttribute('cy', cy); el.ring.setAttribute('r', h*0.66); }
     else el.ring.style.display='none';
-    // marca de región rica (recurso) arriba a la derecha del glifo
-    if(r.rica){ el.rich.style.display=''; el.rich.setAttribute('cx', cx+w/2); el.rich.setAttribute('cy', cy-h/2); }
+    // moneda dorada de mina, pegada a la chapita de SU región (deja claro a quién pertenece)
+    if(r.rica){ el.rich.style.display=''; el.rich.setAttribute('cx', cx - cw/2 - 11); el.rich.setAttribute('cy', cy + h/2 + 17); }
     else el.rich.style.display='none';
   });
 }
@@ -887,7 +918,8 @@ function openSheet(id){
     <div class="stat"><div class="v">${r.pop}</div><div class="k">población</div></div>
     <div class="stat"><div class="v">×${P.BONUS[r.grade]}</div><div class="k">defensa</div></div>
   </div>
-  <div class="hint comp">${knowsGarrison(r)?compTxt(r):'composición desconocida'}</div>`;
+  <div class="hint comp">${ mine ? compTxt(r) : (r.intel&&r.intel[G.current] ? compTxtSeen(r.intel[G.current]) : 'composición desconocida') }</div>
+  ${ r.rica ? `<div class="hint" style="color:#b8860b">◆ Mina · +${P.RENTA_RICA} oro/turno para quien la controle</div>` : '' }`;
   if(mine){
     const recCap = Math.floor(r.pop*P.RECLUTA_PCT);
     const room = recCap-(r.inf+r.arq);
@@ -979,7 +1011,7 @@ function doScout(from, to){
   G._gold[G.current]-=P.COSTE_EXPLORA;
   markIntel(b, G.current);                       // foto de su fuerza actual (a partir de ahora puede caducar)
   Audio_.ok(); spendAction();
-  toast(`Explorada ${nombreReg(to)} · fuerza vista ~${b.intel[G.current]}`);
+  toast(`Explorada ${nombreReg(to)} · ${compTxtSeen(b.intel[G.current])}`);
   mode='sel'; afterAction(from);                 // vuelve al panel de la ciudad para encadenar
 }
 function resolveMoveAttack(from, to){
@@ -1018,14 +1050,17 @@ function composeSheet(from, to, friendly){
       info.innerHTML=`Envías <b>${sent}</b> · guarnición rival <b>desconocida</b><br><small>atacas a ciegas — si no rompes, repliegas desmoralizado (−${Math.round(P.DESMORAL*100)}%)</small>`;
       return;
     }
-    const seen=b.intel[G.current], muro=s.muro, A=s.A;     // foto: puede estar desfasada
-    const Dest=seen*P.DEF.inf*muro, adv=(A+Dest)>0? A/(A+Dest):0.5, I=P.CHOQUE, base=Math.min(sent,seen);
-    const dLoss=Math.min(seen, Math.round(base*Math.min(1, adv*I)));
+    const seen=b.intel[G.current], muro=s.muro, seenN=intelTot(seen);   // foto: puede estar desfasada
+    const Dest=poderDef({inf:seen.i,arq:seen.a,cat:seen.c})*muro;
+    const bonus=tiroBonus(sel.arq, seen.a, seenN), A=s.A*bonus;
+    const adv=(A+Dest)>0? A/(A+Dest):0.5, I=P.CHOQUE, base=Math.min(sent,seenN);
+    const dLoss=Math.min(seenN, Math.round(base*Math.min(1, adv*I)));
     const aLoss=Math.min(sent, Math.round(base*Math.min(1, (1-adv)*I)));
     const muroTxt = muro>1.02 ? ` · muralla ×${muro.toFixed(2)}` : '';
-    const survN=sent-aLoss, defLeft=seen-dLoss, rompe = survN>defLeft && survN>0;
+    const tiroTxt = bonus>1.001 ? ` · ventaja de tiro +${Math.round((bonus-1)*100)}%` : '';
+    const survN=sent-aLoss, defLeft=seenN-dLoss, rompe = survN>defLeft && survN>0;
     const lectura = rompe ? 'tomas la región' : `no rompes · desmoralización −${Math.round(P.DESMORAL*100)}%`;
-    info.innerHTML=`Tu fuerza <b>${Math.round(A)}</b> · rival visto <b>~${seen}</b>${muroTxt}<br>estimado: rival −${dLoss} · tú −${aLoss} · ${lectura} <small>(según lo que viste)</small>`;
+    info.innerHTML=`Tu fuerza <b>${Math.round(A)}</b>${tiroTxt} · rival visto <b>~${seenN}</b>${muroTxt}<br>estimado: rival −${dLoss} · tú −${aLoss} · ${lectura} <small>(según lo que viste)</small>`;
   };
   const setQ=(t,v)=>{ const otros=compTot(sel)-sel[t]; const cap=Math.min(avail[t], maxTot-otros);
     const nv=Math.max(0,Math.min(cap,Math.round(v))); if(nv!==sel[t]){ sel[t]=nv; upd(); Audio_.tap(); } };
@@ -1049,20 +1084,23 @@ function attackKind(sel){ return sel.cat>0 ? 'cat' : (sel.arq>sel.inf && sel.arq
 function combatTyped(from,to,sel){
   const res=computeCombat(from,to,sel);
   const outcome = res.captured ? 'win' : (res.defLeft<=0 ? 'razed' : 'hold');
-  playBattle(attackKind(sel), outcome, ()=>applyCombatState(res), ()=>finishCombat(res));
+  playBattle(attackKind(sel), outcome, res, ()=>applyCombatState(res), ()=>finishCombat(res));
 }
 function computeCombat(from,to,sel){
   const b=G.regions[to];
   const s=statsAtaque(sel,b);
   const sentTot=compTot(sel), defTot=tot(b);
-  const adv = (s.A+s.D)>0 ? s.A/(s.A+s.D) : 0.5;          // cuota de fuerza del atacante
+  const A = s.A * tiroBonus(sel.arq, b.arq, defTot);     // ventaja de tiro si superas sus arqueros
+  const adv = (A+s.D)>0 ? A/(A+s.D) : 0.5;               // cuota de fuerza del atacante
   const rnd = ()=> 0.8 + 0.4*Math.random();               // suerte: ±20%
   const I = P.CHOQUE, base = Math.min(sentTot, defTot);    // las bajas se escalan al tamaño del choque
   const defLoss = Math.min(defTot, Math.round(base*Math.min(1, adv*I*rnd())));
   const atkLoss = Math.min(sentTot, Math.round(base*Math.min(1, (1-adv)*I*rnd())));
   const defLeft = defTot-defLoss, survN = sentTot-atkLoss;
   // conquistas si te quedan más tropas que las que aguantan; si no, te rechazan
-  return { from, to, sel, defLoss, atkLoss, defLeft, survN, captured:(survN>0 && survN>defLeft) };
+  return { from, to, sel, defLoss, atkLoss, defLeft, survN, captured:(survN>0 && survN>defLeft),
+    Abase:Math.round(s.A), A:Math.round(A), tiro:tiroBonus(sel.arq,b.arq,defTot),
+    muro:s.muro, D:Math.round(s.D), sentTot, defTot, sentArq:sel.arq||0, defArq:b.arq||0 };
 }
 function applyCombatState(res){            // muta el estado y PINTA (se ejecuta en el impacto)
   const a=G.regions[res.from], b=G.regions[res.to];
@@ -1085,41 +1123,48 @@ function applyCombatState(res){            // muta el estado y PINTA (se ejecuta
   spendAction();
   refreshMap(); updateHUD(); saveGame();                           // color al instante
 }
-function finishCombat(res){                // sonido + mensaje + siguiente paso (al cerrar la animación)
-  if(res.captured){
-    Audio_.conquer();
-    if(res._wasCapital && res._loser) toast(`¡${nombreReg(res.to)} conquistada! ${KINGS[res._loser].name} cae`);
-    else toast(`¡Conquistada ${nombreReg(res.to)}! ${res.survN} ocupan · tus bajas −${res.atkLoss}`);
-  } else if(res.defLeft<=0){
-    Audio_.lose(); toast(`${nombreReg(res.to)} queda arrasada · sin ocupantes`);
-  } else {
-    Audio_.lose(); toast(`Asalto a ${nombreReg(res.to)} rechazado · rival −${res.defLoss} · tus bajas −${res.atkLoss}, desmoralizados −${res._desmor||0}`);
-  }
+function finishCombat(res){                // sonido + siguiente paso (al cerrar el parte)
+  if(res.captured){ Audio_.conquer(); if(res._wasCapital && res._loser) toast(`${KINGS[res._loser].name} cae`); }
+  else Audio_.lose();
   if(!checkVictory()){
     if(res.captured) deselect();          // se ve tuya al instante; reforzar es opcional (tócala si quieres)
     else afterAction(res.from);
   }
 }
+function battleReportHTML(res){            // desglose que enseña las reglas al jugar
+  const win=res.captured, razed=!win && res.defLeft<=0;
+  const head = win ? `<span class="bf-h win">¡Victoria!</span>` : `<span class="bf-h">${razed?'Arrasada':'Rechazados'}</span>`;
+  let f = `Tu fuerza ${res.Abase}`;
+  if(res.tiro>1.001) f += ` <span class="bf-bon">+${Math.round((res.tiro-1)*100)}% tiro</span> → ${res.A}`;
+  let d = `Defensa rival ${res.D}`;
+  if(res.muro>1.02) d += ` <span class="bf-bon">muralla ×${res.muro.toFixed(2)}</span>`;
+  let bajas = `Bajas — rival −${res.defLoss} · tú −${res.atkLoss}`;
+  if(res._desmor) bajas += ` <span class="bf-bon">desmoralizados −${res._desmor}</span>`;
+  const outl = win ? `${res.survN} ocupan ${nombreReg(res.to)}`
+            : razed ? `${nombreReg(res.to)} sin ocupantes`
+            : `${nombreReg(res.to)}: le quedan ~${res.defLeft}`;
+  return `${head}<br>${f}<br>${d}<br>${bajas}<br>${outl}<br><span class="bf-tap">toca para continuar</span>`;
+}
 const RESULT_IMG = { win:'batalla_victoria.png', hold:'batalla_derrota.png', razed:'batalla_derrota.png' };
 const RESULT_TXT = { win:'¡Victoria!', hold:'Rechazados', razed:'Arrasada' };
-function playBattle(type, outcome, onImpact, onDone){
-  const fx=$('battle-fx'), img=$('bf-img'), img2=$('bf-img2'), banner=$('bf-banner');
-  let finished=false, impacted=false, timers=[];
+function playBattle(type, outcome, res, onImpact, onDone){
+  const fx=$('battle-fx'), img=$('bf-img'), img2=$('bf-img2'), banner=$('bf-banner'), detail=$('bf-detail');
+  let impacted=false, shown=false, finished=false, timers=[];
   const doImpact=()=>{ if(impacted) return; impacted=true; if(typeof onImpact==='function') onImpact(); };
+  const showResult=()=>{ if(shown) return; shown=true; doImpact();
+    img2.style.display='block'; fx.classList.remove('phase1','impact'); fx.classList.add('phase2');
+    banner.textContent=''; detail.innerHTML=battleReportHTML(res); detail.classList.add('show'); };
   const finish=()=>{ if(finished) return; finished=true; timers.forEach(clearTimeout);
-    doImpact();                                          // si se salta antes del impacto, aplica igual
-    fx.className=''; fx.onpointerdown=null;
+    doImpact(); fx.className=''; fx.onpointerdown=null; detail.classList.remove('show'); detail.innerHTML='';
     if(typeof onDone==='function') onDone(); };
-  banner.textContent=''; banner.className='bf-banner'; img2.style.display='none';
-  img.onerror=finish;                                    // si falta el PNG no bloquea el juego
+  banner.textContent=''; banner.className='bf-banner'; img2.style.display='none'; detail.classList.remove('show'); detail.innerHTML='';
+  img.onerror=showResult;                                // si falta el PNG, muestra al menos el parte
   img.src  = BATTLE_IMG[type]||BATTLE_IMG.inf;
   img2.src = RESULT_IMG[outcome]||RESULT_IMG.hold;
   fx.className='show phase1';
-  timers.push(setTimeout(()=>{ fx.classList.add('impact'); doImpact(); }, 860));    // sacudida + pinta el mapa
-  timers.push(setTimeout(()=>{ img2.style.display='block'; fx.classList.remove('phase1','impact'); fx.classList.add('phase2');
-    banner.textContent=RESULT_TXT[outcome]||''; banner.classList.add('show', outcome); }, 1450));  // fundido al resultado
-  timers.push(setTimeout(finish, 3200));
-  fx.onpointerdown=finish;                               // tocar = saltar
+  timers.push(setTimeout(()=>{ fx.classList.add('impact'); doImpact(); }, 860));   // sacudida + pinta el mapa
+  timers.push(setTimeout(showResult, 1450));                                       // fundido al resultado + parte
+  fx.onpointerdown=()=>{ if(!shown) showResult(); else finish(); };                // 1º toque: ver parte · 2º: continuar
 }
 function eliminateKing(k, exceptCapital){
   G.alive=G.alive.filter(x=>x!==k);
@@ -1236,13 +1281,16 @@ function aiDo(mv,k){
     toast(`${KINGS[k].name} mejora ${name} → ${GRADO[r.grade]}`); log.push(`mejoró ${name}`);
   }
 }
-function aiKnown(to,k){ const r=G.regions[to]; return r.owner===k || (r.intel && r.intel[k]!=null); }
+function aiKnown(to,k){ const r=G.regions[to]; return r.owner===k || (r.intel && r.intel[k]); }
 function aiEvalAttack(sel, to, k){               // estimación determinista (suerte media) respetando la niebla
-  const r=G.regions[to], A=poderAtk(sel), sentN=compTot(sel);
+  const r=G.regions[to], sentN=compTot(sel);
   const known=aiKnown(to,k);
-  const defN = known ? r.intel[k] : AI.estDef[r.grade];   // foto conocida o estimación por rango
+  const o = known ? r.intel[k] : null;                    // foto conocida (composición) o nada
+  const defN = known ? intelTot(o) : AI.estDef[r.grade];  // total conocido o estimación por rango
+  const defArq = known ? (o.a||0) : 0;                    // arqueros conocidos (los neutrales sin explorar se asumen sin arqueros)
   const muro = known ? murallaFactor(r, sel.cat) : P.BONUS[r.grade];
-  const D = defN*P.DEF.inf * muro;
+  const D = (known ? poderDef({inf:o.i,arq:o.a,cat:o.c}) : defN*P.DEF.inf) * muro;
+  const A = poderAtk(sel) * tiroBonus(sel.arq, defArq, defN);
   const adv=(A+D)>0? A/(A+D):0.5, I=P.CHOQUE, base=Math.min(sentN, defN);
   const defLoss=Math.min(defN, base*Math.min(1,adv*I));
   const atkLoss=Math.min(sentN, base*Math.min(1,(1-adv)*I));
@@ -1281,7 +1329,8 @@ function aiBestMove(k){
     if(at!=null){
       const r=G.regions[at];
       let t='inf', coste=P.COSTE_INF;
-      if(r.grade>=1 && gold > AI.goldBuffer + P.COSTE_ARQ*6 && Math.random()<0.5){ t='arq'; coste=P.COSTE_ARQ; }
+      // arqueros solo para defender: en ciudades o comarcas de frontera (donde la muralla los hace valer)
+      if(r.grade>=1 && aiBorder(k,at) && gold > AI.goldBuffer + P.COSTE_ARQ*6 && Math.random()<0.4){ t='arq'; coste=P.COSTE_ARQ; }
       const room=Math.max(0, Math.floor(r.pop*P.RECLUTA_PCT)-(r.inf+r.arq));
       const n=Math.min(room, Math.floor((gold-AI.goldBuffer)/coste), AI.recruitCap);
       if(n>=1) return {type:'recruit',at,t,n,coste};
@@ -1324,9 +1373,9 @@ function restoreGame(s){
   const kings = s.num===3?['W','B','G']:['W','B'];
   const capOf={W:CAP.W,B:CAP.B}; if(s.num===3)capOf.G=CAP.G;
   const regions = MAP.regions.map((rd,i)=>{ const d=s.regions[i]||{};
-    let intel=d.I;
-    if(!intel && d.k){ intel={}; const t=(d.i||0)+(d.a||0)+(d.c||0); d.k.split('').forEach(x=>{ if(x) intel[x]=t; }); } // guardados viejos
-    intel=intel||{};
+    let intel=d.I||{};
+    for(const x in intel){ const v=intel[x]; if(typeof v==='number') intel[x]={i:v,a:0,c:0}; } // guardados v31–36: número → foto
+    if(!d.I && d.k){ intel={}; const t=(d.i||0)+(d.a||0)+(d.c||0); d.k.split('').forEach(x=>{ if(x) intel[x]={i:t,a:0,c:0}; }); } // guardados aún más viejos
     return {owner:(d.o==null?null:d.o),grade:d.g||0,pop:d.p||0,inf:d.i||0,arq:d.a||0,cat:d.c||0,intel,rica:!!d.R}; });
   G={ regions, kings, capOf, alive:s.alive, current:s.current, actions:s.actions, started:!!s.started, num:s.num, _gold:s.gold||{}, dom:s.dom||{}, ai:(s.ai||'').split('').filter(Boolean) };
   buildMap(); sel=null; adjSet=new Set(); mode='idle'; refreshMap(); updateHUD();
@@ -1395,7 +1444,7 @@ window.addEventListener('load', ()=>{
   setTimeout(()=>{ const s=$('app-splash'); s.classList.add('hiding'); setTimeout(()=>s.style.display='none',650); }, 1400);
 });
 (async function showVersion(){
-  let v='reyes-v34';
+  let v='reyes-v38';
   try{ if('caches' in window){ const keys=await caches.keys(); const k=keys.find(x=>/^reyes-v/.test(x)); if(k)v=k; } }catch(e){}
   $('version-label').textContent=v.replace('reyes-','').toUpperCase()+' · SOCRAM GAMES';
 })();
