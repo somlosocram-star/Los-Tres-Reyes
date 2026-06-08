@@ -1019,13 +1019,12 @@ function composeSheet(from, to, friendly){
       return;
     }
     const seen=b.intel[G.current], muro=s.muro, A=s.A;     // foto: puede estar desfasada
-    const Dest=seen*P.DEF.inf*muro, adv=(A+Dest)>0? A/(A+Dest):0.5, I=P.CHOQUE;
-    const dLoss=Math.min(seen, Math.round(seen*Math.min(1, adv*I)));
-    const aLoss=Math.min(sent, Math.round(sent*Math.min(1, (1-adv)*I)));
+    const Dest=seen*P.DEF.inf*muro, adv=(A+Dest)>0? A/(A+Dest):0.5, I=P.CHOQUE, base=Math.min(sent,seen);
+    const dLoss=Math.min(seen, Math.round(base*Math.min(1, adv*I)));
+    const aLoss=Math.min(sent, Math.round(base*Math.min(1, (1-adv)*I)));
     const muroTxt = muro>1.02 ? ` · muralla ×${muro.toFixed(2)}` : '';
-    const rompe = dLoss>=seen;
-    const lectura = rompe ? ((sent-aLoss)>0?'tomas la región':'aniquilación mutua')
-                          : `no rompes · desmoralización −${Math.round(P.DESMORAL*100)}%`;
+    const survN=sent-aLoss, defLeft=seen-dLoss, rompe = survN>defLeft && survN>0;
+    const lectura = rompe ? 'tomas la región' : `no rompes · desmoralización −${Math.round(P.DESMORAL*100)}%`;
     info.innerHTML=`Tu fuerza <b>${Math.round(A)}</b> · rival visto <b>~${seen}</b>${muroTxt}<br>estimado: rival −${dLoss} · tú −${aLoss} · ${lectura} <small>(según lo que viste)</small>`;
   };
   const setQ=(t,v)=>{ const otros=compTot(sel)-sel[t]; const cap=Math.min(avail[t], maxTot-otros);
@@ -1058,17 +1057,18 @@ function computeCombat(from,to,sel){
   const sentTot=compTot(sel), defTot=tot(b);
   const adv = (s.A+s.D)>0 ? s.A/(s.A+s.D) : 0.5;          // cuota de fuerza del atacante
   const rnd = ()=> 0.8 + 0.4*Math.random();               // suerte: ±20%
-  const I = P.CHOQUE;
-  const defLoss = Math.min(defTot, Math.round(defTot*Math.min(1, adv*I*rnd())));
-  const atkLoss = Math.min(sentTot, Math.round(sentTot*Math.min(1, (1-adv)*I*rnd())));
+  const I = P.CHOQUE, base = Math.min(sentTot, defTot);    // las bajas se escalan al tamaño del choque
+  const defLoss = Math.min(defTot, Math.round(base*Math.min(1, adv*I*rnd())));
+  const atkLoss = Math.min(sentTot, Math.round(base*Math.min(1, (1-adv)*I*rnd())));
   const defLeft = defTot-defLoss, survN = sentTot-atkLoss;
-  return { from, to, sel, defLoss, atkLoss, defLeft, survN, captured:(defLeft<=0 && survN>0) };
+  // conquistas si te quedan más tropas que las que aguantan; si no, te rechazan
+  return { from, to, sel, defLoss, atkLoss, defLeft, survN, captured:(survN>0 && survN>defLeft) };
 }
 function applyCombatState(res){            // muta el estado y PINTA (se ejecuta en el impacto)
   const a=G.regions[res.from], b=G.regions[res.to];
   a.inf-=res.sel.inf; a.arq-=res.sel.arq; a.cat-=res.sel.cat;     // sale el destacamento
-  markIntel(b, G.current);                                       // foto de la guarnición con la que te topaste
   takeProp(b, res.defLoss);                                       // bajas del defensor
+  markIntel(b, G.current);                                       // foto YA con sus bajas (ves cómo lo dejaste)
   const surv=scaleToTotal(res.sel, Math.max(0,res.survN));
   res._wasCapital=isCapital(res.to); res._loser=b.owner;
   if(res.captured){
@@ -1243,10 +1243,11 @@ function aiEvalAttack(sel, to, k){               // estimación determinista (su
   const defN = known ? r.intel[k] : AI.estDef[r.grade];   // foto conocida o estimación por rango
   const muro = known ? murallaFactor(r, sel.cat) : P.BONUS[r.grade];
   const D = defN*P.DEF.inf * muro;
-  const adv=(A+D)>0? A/(A+D):0.5, I=P.CHOQUE;
-  const defLoss=Math.min(defN, defN*Math.min(1,adv*I));
-  const atkLoss=Math.min(sentN, sentN*Math.min(1,(1-adv)*I));
-  return { A, D, captures:(defN-defLoss)<=0.5 && (sentN-atkLoss)>0.5, atkLoss };
+  const adv=(A+D)>0? A/(A+D):0.5, I=P.CHOQUE, base=Math.min(sentN, defN);
+  const defLoss=Math.min(defN, base*Math.min(1,adv*I));
+  const atkLoss=Math.min(sentN, base*Math.min(1,(1-adv)*I));
+  const survN=sentN-atkLoss, defLeft=defN-defLoss;
+  return { A, D, captures:(survN>defLeft && survN>0), atkLoss };
 }
 function aiRegionValue(to,k){
   const r=G.regions[to];
@@ -1394,7 +1395,7 @@ window.addEventListener('load', ()=>{
   setTimeout(()=>{ const s=$('app-splash'); s.classList.add('hiding'); setTimeout(()=>s.style.display='none',650); }, 1400);
 });
 (async function showVersion(){
-  let v='reyes-v33';
+  let v='reyes-v34';
   try{ if('caches' in window){ const keys=await caches.keys(); const k=keys.find(x=>/^reyes-v/.test(x)); if(k)v=k; } }catch(e){}
   $('version-label').textContent=v.replace('reyes-','').toUpperCase()+' · SOCRAM GAMES';
 })();
