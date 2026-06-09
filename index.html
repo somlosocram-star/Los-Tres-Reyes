@@ -312,7 +312,7 @@ body.light .overlay{background:rgba(40,38,32,.4);}
     </div>
   </div>
   <button id="endturn" class="hidden">Listo ▸</button>
-  <div id="count" style="position:fixed;left:0;right:0;bottom:0;transform:translateY(120%);transition:transform .25s;background:var(--ink,#161009);color:var(--paper,#efe9dd);text-align:center;padding:.9rem;z-index:60;font-family:'IBM Plex Mono',monospace;letter-spacing:.06em;font-size:.82rem"></div>
+  <div id="count" style="position:fixed;left:0;right:0;bottom:0;transform:translateY(120%);transition:transform .25s;background:#161009;color:#efe9dd;text-align:center;padding:.9rem;z-index:60;font-family:'IBM Plex Mono',monospace;letter-spacing:.06em;font-size:.82rem"></div>
   <div id="toast"></div>
 </div>
 
@@ -999,8 +999,13 @@ function roundReport(before, seen, INFO){
     else           s+= f.champ==='W'?`Te rechazan (resistían ${f.defLeft}).`:(f.ownBefore==='W'?'Resistes el asalto.':'Es rechazado.');
     lines.push(s);
   });
-  G.regions.forEach((r,i)=>{ if(!seen.has(i)||inv(i)) return; if(before[i]!==r.owner && r.owner) lines.push(`Observas: ${nm(r.owner)} toma ${nombreReg(i)}`); });
-  if(!lines.length) lines.push('Sin novedades en tus fronteras');
+  // Noticias de toda Selenia: cada región que cambió de manos esta ronda (aunque no la vieras)
+  const news=[];
+  G.regions.forEach((r,i)=>{ if(inv(i)) return; if(before[i]!==r.owner){
+    if(r.owner && r.owner!=='W') news.push(`${nm(r.owner)} toma ${nombreReg(i)}`);
+    else if(!r.owner && before[i] && before[i]!=='W') news.push(`${nombreReg(i)} queda neutral`); } });
+  if(!lines.length && !news.length) lines.push('Sin novedades en tus fronteras');
+  if(news.length) lines.push('— En Selenia —', ...news);
   G.phase='report';
   $('cur-name').textContent='Parte · Turno '+((G.turnNo||1)-1);
   $('cur-sub').innerHTML=`<small style="line-height:1.6">${lines.join('<br>')}</small>`;
@@ -1360,9 +1365,9 @@ function playBattle(type, outcome, res, onImpact, onDone){
   timers.push(setTimeout(showResult, 1450));                                       // fundido al resultado + parte
   fx.onpointerdown=()=>{ if(!shown) showResult(); else finish(); };                // 1º toque: ver parte · 2º: continuar
 }
-function eliminateKing(k, exceptCapital){
+function eliminateKing(k, exceptCapital, heir){
   G.alive=G.alive.filter(x=>x!==k);
-  G.regions.forEach((r,i)=>{ if(r.owner===k && i!==exceptCapital){ r.owner=null; } }); // tierras → neutrales
+  G.regions.forEach((r,i)=>{ if(r.owner===k && i!==exceptCapital){ r.owner = heir||null; } }); // su reino pasa al conquistador (o a neutral)
 }
 function afterAction(focusId){
   refreshMap(); updateHUD(); saveGame();
@@ -1615,7 +1620,7 @@ function resolveSimTurn(orders, INFO){             // resuelve un turno simultá
     const wasCap=isCapital(to), loser=own, res=assaultReal(ch.comp,r,ref);
     info.kind='asalto'; info.champ=ch.king; info.muro=res.muro; info.captured=res.captured;
     if(res.captured){ r.owner=ch.king; r.inf=res.survAtk.inf;r.arq=res.survAtk.arq;r.cat=res.survAtk.cat; info.champN=tot(res.survAtk);
-      if(wasCap&&loser) eliminateKing(loser,to); }
+      if(wasCap&&loser) eliminateKing(loser,to,ch.king); }
     else{ r.inf=res.survIn.inf;r.arq=res.survIn.arq;r.cat=res.survIn.cat; addComp(r,res.survRef);
       const o=arr.find(x=>x.king===ch.king); if(o){ const v=Math.round(tot(res.survAtk)*(1-P.DESMORAL)); addComp(G.regions[o.from],applyLosses(res.survAtk,v)); }
       info.defLeft=res.defLeft; } }
@@ -1701,16 +1706,14 @@ $('b-install').onclick=async ()=>{ Audio_.tap();
   else { toast('Abre el menú ⋮ del navegador y elige “Instalar app” / “Añadir a pantalla de inicio”'); }
 };
 function syncAiOptions(){
-  pendingKings=3;
-  if(pendingAI > 2) pendingAI = 2;
-  document.querySelectorAll('#aisel .opt').forEach(x=>x.classList.toggle('on', +x.dataset.ai===pendingAI));
-  const human = 3 - pendingAI;
-  $('setup-note').textContent =
-    pendingAI===0 ? 'Paso y juega: 3 humanos en rotación.'
-    : `${human} humano${human>1?'s':''} contra ${pendingAI} rey${pendingAI>1?'es':''} de la máquina. Tú juegas como Blanco.`;
+  pendingKings=3; pendingAI=2;                       // por ahora el local es siempre tú + 2 IA
+  document.querySelectorAll('#aisel .opt').forEach(x=>{ const v=+x.dataset.ai;
+    const on = v===2; x.classList.toggle('on', on);
+    if(v!==2){ x.style.opacity='.35'; x.style.pointerEvents='none'; } });
+  $('setup-note').textContent = 'Tú contra los reyes Negro y Gris de la máquina. El multijugador entre personas llegará con el modo online.';
 }
-$('aisel').onclick=e=>{ const o=e.target.closest('.opt'); if(!o)return;
-  pendingAI=+o.dataset.ai; syncAiOptions(); Audio_.tap();
+$('aisel').onclick=e=>{ const o=e.target.closest('.opt'); if(!o||+o.dataset.ai!==2)return;
+  pendingAI=2; syncAiOptions(); Audio_.tap();
 };
 $('setup-start').onclick=()=>{ Audio_.tap(); $('setup-overlay').classList.remove('show'); newGame(3, pendingAI); };
 $('setup-cancel').onclick=()=>$('setup-overlay').classList.remove('show');
@@ -1729,7 +1732,7 @@ window.addEventListener('load', ()=>{
   setTimeout(()=>{ const s=$('app-splash'); s.classList.add('hiding'); setTimeout(()=>s.style.display='none',650); }, 1400);
 });
 (async function showVersion(){
-  let v='reyes-v45';
+  let v='reyes-v46';
   try{ if('caches' in window){ const keys=await caches.keys(); const k=keys.find(x=>/^reyes-v/.test(x)); if(k)v=k; } }catch(e){}
   $('version-label').textContent=v.replace('reyes-','').toUpperCase()+' · SOCRAM GAMES';
 })();
