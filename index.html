@@ -294,7 +294,7 @@ body.light .overlay{background:rgba(40,38,32,.4);}
   <h1 class="title">Los Tres<br>Reyes</h1>
   <div class="tagline">conquista o muere</div>
   <button class="plaque" id="b-continue" style="display:none"><span class="pl-inner"><span class="pl-title">Continuar partida</span><span class="pl-sub">retomar donde lo dejaste</span></span></button>
-  <button class="plaque" id="b-local"><span class="pl-inner"><span class="pl-title">Partida local</span><span class="pl-sub">paso y juega · 2–3 reyes</span></span></button>
+  <button class="plaque" id="b-local"><span class="pl-inner"><span class="pl-title">Partida local</span><span class="pl-sub">paso y juega · 3 reyes</span></span></button>
   <button class="plaque" id="b-online" disabled><span class="pl-inner"><span class="pl-title">En línea</span><span class="pl-sub">próximamente · v2</span></span></button>
   <button class="plaque" id="b-howto"><span class="pl-inner"><span class="pl-title">Cómo se juega</span></span></button>
   <button class="btn ghost" id="b-install" style="display:none">Instalar app<span class="sub">añadir a la pantalla de inicio</span></button>
@@ -311,7 +311,8 @@ body.light .overlay{background:rgba(40,38,32,.4);}
       <span id="actions-n" class="mono">◷ <b id="act-v">3</b></span>
     </div>
   </div>
-  <button id="endturn" class="hidden">Terminar turno ▸</button>
+  <button id="endturn" class="hidden">Listo ▸</button>
+  <div id="count" style="position:fixed;left:0;right:0;bottom:0;transform:translateY(120%);transition:transform .25s;background:var(--ink,#161009);color:var(--paper,#efe9dd);text-align:center;padding:.9rem;z-index:60;font-family:'IBM Plex Mono',monospace;letter-spacing:.06em;font-size:.82rem"></div>
   <div id="toast"></div>
 </div>
 
@@ -341,18 +342,14 @@ body.light .overlay{background:rgba(40,38,32,.4);}
   <div class="card">
     <h2>Partida local</h2>
     <div class="lead">paso y juega en un dispositivo</div>
-    <p>¿Cuántos reyes luchan por el reino?</p>
-    <div class="kingsel" id="kingsel">
-      <div class="opt on" data-n="2"><div class="n">2</div><div class="l">blanco · negro</div></div>
-      <div class="opt" data-n="3"><div class="n">3</div><div class="l">+ rey gris</div></div>
-    </div>
-    <p class="mono" style="font-size:.78rem;color:var(--muted)" id="setup-note">Con 2 reyes, el tercer trono y sus tierras empiezan neutrales: una capital fuerte en disputa.</p>
+    <p>Selenia se la disputan siempre <b>tres reyes</b>: Blanco, Negro y Gris.</p>
     <p>¿Quién lleva a los rivales?</p>
     <div class="kingsel" id="aisel">
-      <div class="opt" data-ai="0"><div class="n">0</div><div class="l">todos humanos</div></div>
-      <div class="opt on" data-ai="1"><div class="n">1</div><div class="l">1 rival IA</div></div>
-      <div class="opt" data-ai="2"><div class="n">2</div><div class="l">2 rivales IA</div></div>
+      <div class="opt" data-ai="0"><div class="n">0</div><div class="l">3 humanos</div></div>
+      <div class="opt" data-ai="1"><div class="n">1</div><div class="l">2 humanos + 1 IA</div></div>
+      <div class="opt on" data-ai="2"><div class="n">2</div><div class="l">tú + 2 IA</div></div>
     </div>
+    <p class="mono" style="font-size:.78rem;color:var(--muted)" id="setup-note"></p>
     <button class="btn primary" id="setup-start">Empezar</button>
     <button class="btn ghost" id="setup-cancel">Cancelar</button>
   </div>
@@ -661,12 +658,12 @@ function newGame(numKings, nAI){
   // en 2 jugadores: la 3ª capital es Ciudad neutral fuerte
   if(numKings===2){ const r=regions[caps[2]]; r.owner=null; r.grade=2; r.pop=P.CAP_POB; r.inf=P.CAP_ARMY; r.arq=0; r.cat=0; }
   regions.forEach(r=>{ r.intel={}; });   // niebla: qué rey conoce la guarnición de cada región
-  G = { regions, kings, capOf, alive:[...kings], current:null, actions:P.ACCIONES, started:false, num:numKings, dom:{}, ai };
+  G = { regions, kings, capOf, alive:[...kings], current:null, actions:P.ACCIONES, started:false, num:numKings, dom:{}, ai, turnNo:1 };
   // empieza un rey humano si lo hay (normalmente Blanco); si todos son IA, uno al azar
   const humans = kings.filter(x=>!ai.includes(x));
   G.current = humans.length ? humans[0] : kings[(Math.random()*kings.length)|0];
   buildMap();
-  startTurn(true);
+  G.turnNo=1; startRound();
   showScreen('screen-game');
   ['batalla_inf.png','batalla_arq.png','batalla_cat.png','batalla_victoria.png','batalla_derrota.png','fin_victoria.png']
     .forEach(s=>{ const im=new Image(); im.src=s; });   // precarga silenciosa
@@ -754,7 +751,7 @@ function refreshMap(){
     el.name.setAttribute('y', cy-h/2-11); el.name.textContent = nombreReg(rd.id);
     // guarnición: número exacto (propia), ~aprox (ya combatida) o etiqueta (sin explorar)
     const unrest = (r.owner===G.current && r.unrest && !isCapital(rd.id));
-    const txt=garrisonText(r) + (unrest?' !':''), cw=txt.length*13+16;
+    const txt=garrisonText(r) + (unrest?' !':'') + ((G.plan&&G.plan[rd.id])?' ▸':''), cw=txt.length*13+16;
     el.chip.setAttribute('x', cx-cw/2); el.chip.setAttribute('y', cy+h/2+2); el.chip.setAttribute('width', cw);
     el.label.setAttribute('y', cy+h/2+17); el.label.textContent = txt;
     // anillo rojo solo en capitales (el trono); sin corona
@@ -878,9 +875,9 @@ function checkDomination(k, regs){
 }
 function showCurtain(k, neto, regs){
   $('cur-name').textContent=KINGS[k].name;
-  let sub='tu turno';
+  let sub=`Turno ${G.turnNo||1}`;
   if(neto!=null){
-    sub = (neto>=0?`+${neto}`:`${neto}`)+' oro · tu turno';
+    sub = (neto>=0?`+${neto}`:`${neto}`)+` oro · Turno ${G.turnNo||1}`;
     const need=Math.ceil(P.DOM_PCT*G.regions.length), have=G.dom?(G.dom[k]||0):0;
     if(regs>=need && have>0) sub += ` · dominio ${have}/${P.DOM_TURNS}`;
   }
@@ -892,7 +889,124 @@ function showCurtain(k, neto, regs){
   $('cur-crown').style.color = k==='B' ? 'var(--muted)' : 'var(--accent)';
   $('curtain').classList.add('show');
 }
-$('cur-go').onclick=()=>{ $('curtain').classList.remove('show'); Audio_.tap(); autoZoomToActive(); };
+$('cur-go').onclick=()=>{ Audio_.tap();
+  if(G.phase==='report'){ $('curtain').classList.remove('show'); startRound(); return; }
+  $('curtain').classList.remove('show'); autoZoomToActive();
+};
+
+/* ===== BUCLE SIMULTÁNEO (tú = Blanco; Negro y Gris los planifica la IA) ===== */
+function startRound(){
+  G.phase='plan'; G.current='W'; G.plan={}; aiBusy=false; animating=false;
+  const ordMsgs=[];
+  G.alive.forEach(k=>{
+    const ord=checkOrder(k);
+    if(k==='W'){ ord.subl.forEach(i=>ordMsgs.push(`${nombreReg(i)} se ha SUBLEVADO por falta de guarnición`));
+                 ord.inq.forEach(i=>ordMsgs.push(`${nombreReg(i)} está inquieta · refuérzala o se sublevará`)); }
+    let renta=0, mant=0;
+    G.regions.forEach(r=>{ if(r.owner===k){ r.pop=Math.min(P.POB_MAX[r.grade], r.pop+P.CREC[r.grade]);
+      renta+=P.RENTA[r.grade]+(r.rica?P.RENTA_RICA:0); mant+=r.inf*P.MANT.inf+r.arq*P.MANT.arq+r.cat*P.MANT.cat; } });
+    if(!G._gold) G._gold={}; if(G._gold[k]==null) G._gold[k]=P.ORO_INICIAL;
+    G._gold[k]=Math.max(0, G._gold[k]+Math.round(renta-mant));
+  });
+  // ¿alguien domina Selenia? (control sostenido)
+  if(!G.dom) G.dom={}; const need=Math.ceil(P.DOM_PCT*G.regions.length);
+  for(const k of G.alive){ const regs=G.regions.filter(r=>r.owner===k).length;
+    G.dom[k]=(regs>=need)?(G.dom[k]||0)+1:0; if(G.dom[k]>=P.DOM_TURNS){ endGame(k,'dominio'); return; } }
+  G.actions=P.ACCIONES; G.started=true;
+  deselect(); refreshMap(); updateHUD(); saveGame();
+  $('endturn').classList.remove('hidden'); $('endturn').textContent='Listo ▸';
+  $('cur-name').textContent='Turno '+(G.turnNo||1);
+  $('cur-sub').innerHTML='Planifica tus '+P.ACCIONES+' acciones'+(ordMsgs.length?`<br><small style="color:var(--accent)">${ordMsgs.join('<br>')}</small>`:'');
+  $('cur-crown').style.color='var(--accent)'; $('cur-go').textContent='Comenzar';
+  $('curtain').classList.add('show');
+}
+function planEnqueue(from,to,comp){
+  G.plan[from]={to, comp:{inf:comp.inf||0,arq:comp.arq||0,cat:comp.cat||0}};
+  Audio_.ok(); G.actions--; deselect(); refreshMap(); updateHUD();
+  toast(`Orden: ${tot(G.plan[from])>0?compTot(comp):0} → ${nombreReg(to)}`);
+  if(G.actions<=0) toast('Sin acciones · pulsa Listo');
+}
+function cancelOrder(from){ if(G.plan[from]){ delete G.plan[from]; G.actions++; deselect(); refreshMap(); updateHUD(); } }
+function resolveRound(){
+  if(aiBusy||animating) return;
+  G.phase='resolving'; aiBusy=true; closeSheet(); deselect(); $('endturn').classList.add('hidden');
+  let t=20; const c=$('count');
+  const show=()=>{ c.textContent=`Los otros reyes deciden… ${t}  ·  toca para resolver ya`; };
+  show(); c.style.transform='translateY(0)';
+  const skip=()=>{ t=0; };
+  c.onclick=skip;
+  const iv=setInterval(()=>{ t--; show(); if(t<=0){ clearInterval(iv); c.onclick=null; c.style.transform='translateY(120%)'; doResolve(); } }, 1000);
+}
+function doResolve(){
+  let orders=[];
+  Object.keys(G.plan).forEach(f=>orders.push({king:'W', from:+f, to:G.plan[f].to, comp:G.plan[f].comp}));
+  ['B','G'].forEach(k=>{ if(G.alive.includes(k)){ aiRecruitRound(k); orders=orders.concat(aiPlanOrders(k)); } });
+  const before=G.regions.map(r=>r.owner);
+  const seen=new Set(); G.regions.forEach((r,i)=>{ if(before[i]==='W'){ seen.add(i); MAP.regions[i].adj.forEach(j=>seen.add(j)); } });
+  Object.keys(G.plan).forEach(f=>seen.add(G.plan[f].to));
+  const wDest=new Set(Object.keys(G.plan).map(f=>G.plan[f].to));
+  const visible=orders.filter(o=> o.king==='W' || before[o.to]==='W' || wDest.has(o.to));
+  animateMany(visible, ()=>{
+    const INFO={}; resolveSimTurn(orders, INFO);
+    G.turnNo=(G.turnNo||1)+1; aiBusy=false; animating=false;
+    refreshMap(); updateHUD();
+    if(checkVictory()) return;
+    roundReport(before, seen, INFO);
+  });
+}
+function aiRecruitRound(k){                          // la IA gasta algo de oro en rearmarse antes de planificar
+  let gold=G._gold[k]||0; const room=r=>Math.max(0,Math.floor(r.pop*P.RECLUTA_PCT)-(r.inf+r.arq));
+  const under=i=>(!isCapital(i) && tot(G.regions[i])<P.ORDEN[G.regions[i].grade]) ? 1 : 0;
+  let mine=[]; G.regions.forEach((r,i)=>{ if(r.owner===k) mine.push(i); });
+  mine.sort((a,b)=> under(b)-under(a));                // primero las plazas por debajo del orden
+  for(const i of mine){ const r=G.regions[i]; if(gold < P.COSTE_INF+(AI.goldBuffer||60)) break;
+    const n=Math.min(room(r), Math.floor((gold-(AI.goldBuffer||60))/P.COSTE_INF), 40);
+    if(n>=1){ r.inf+=n; gold-=n*P.COSTE_INF; } }
+  G._gold[k]=gold;
+}
+function animateMany(orders, done){
+  const live=orders.filter(o=>svgEls[o.from]&&svgEls[o.to]&&dotsFor(o.comp).length);
+  if(!live.length || typeof requestAnimationFrame!=='function'){ done(); return; }
+  animating=true;
+  const all=[]; const DUR=2000, ease=p=>p<.5?2*p*p:1-Math.pow(-2*p+2,2)/2;
+  live.forEach(o=>{ const A=svgEls[o.from], B=svgEls[o.to], off=()=>(Math.random()-0.5)*22;
+    dotsFor(o.comp).forEach((col,i)=>{ const e=ce('circle'); e.setAttribute('r','8'); e.setAttribute('fill',col);
+      e.setAttribute('stroke','#1a130b'); e.setAttribute('stroke-width','1.5'); gAnim.appendChild(e);
+      all.push({e, sx:A.cx+off(), sy:A.cy+off(), ex:B.cx+off(), ey:B.cy+off(), delay:i*55}); }); });
+  const t0=(performance&&performance.now)?performance.now():Date.now();
+  function frame(){ const t=((performance&&performance.now)?performance.now():Date.now())-t0; let end=true;
+    all.forEach(d=>{ const p=Math.max(0,Math.min(1,(t-d.delay)/DUR)); if(p<1)end=false; const e=ease(p);
+      d.e.setAttribute('cx', d.sx+(d.ex-d.sx)*e); d.e.setAttribute('cy', d.sy+(d.ey-d.sy)*e); });
+    if(end){ all.forEach(d=>d.e.remove()); animating=false; done(); } else requestAnimationFrame(frame); }
+  requestAnimationFrame(frame);
+  setTimeout(()=>{ if(animating){ all.forEach(d=>d.e&&d.e.remove()); animating=false; } }, DUR+all.length*55+800);
+}
+function roundReport(before, seen, INFO){
+  const nm=k=>k==='W'?'Tú':KINGS[k].name;
+  const inv=to=>{ const f=INFO[to]; return f&&(f.ownBefore==='W'||f.refKing==='W'||(f.atks||[]).some(a=>a.king==='W')); };
+  const lines=[];
+  Object.keys(INFO).map(Number).filter(inv).forEach(to=>{ const f=INFO[to], N=nombreReg(to);
+    if(f.kind==='refuerzo'){ lines.push(`Refuerzas ${N} (+${f.refN})`); return; }
+    if(f.kind==='ocupa'){ lines.push(f.champ==='W'?`Ocupas ${N} sin resistencia`:`${nm(f.champ)} ocupa ${N}`); return; }
+    if(f.kind==='escaramuza'){ const otros=(f.atks||[]).filter(a=>a.king!=='W').map(a=>KINGS[a.king].name).join(' y ');
+      lines.push(f.champ==='W'
+        ? `Coincides con ${otros} camino de ${N}: ganas la escaramuza y te repliegas a ${nombreReg(f.retreatTo)} (la guarnición sigue intacta).`
+        : `Coincides con ${nm(f.champ)} camino de ${N}: pierdes la escaramuza y tu ejército se dispersa.`);
+      return; }
+    const def=`defienden ${f.defGarr}${f.refN?`+${f.refN} ref.`:''}, muro ×${(f.muro||1).toFixed(1)}`, ak=f.atks[0].king;
+    let s=`${ak==='W'?'Asaltas':KINGS[ak].name+' asalta'} ${N} (${def}). `;
+    if(f.captured) s+= f.champ==='W'?'Tomas la plaza.':(f.ownBefore==='W'?'La pierdes.':'La conquista.');
+    else           s+= f.champ==='W'?`Te rechazan (resistían ${f.defLeft}).`:(f.ownBefore==='W'?'Resistes el asalto.':'Es rechazado.');
+    lines.push(s);
+  });
+  G.regions.forEach((r,i)=>{ if(!seen.has(i)||inv(i)) return; if(before[i]!==r.owner && r.owner) lines.push(`Observas: ${nm(r.owner)} toma ${nombreReg(i)}`); });
+  if(!lines.length) lines.push('Sin novedades en tus fronteras');
+  G.phase='report';
+  $('cur-name').textContent='Parte · Turno '+((G.turnNo||1)-1);
+  $('cur-sub').innerHTML=`<small style="line-height:1.6">${lines.join('<br>')}</small>`;
+  $('cur-crown').style.color='var(--accent)'; $('cur-go').textContent='Siguiente turno';
+  $('curtain').classList.add('show'); saveGame();
+}
 
 function updateHUD(){
   const k=G.current;
@@ -911,9 +1025,11 @@ function endTurn(){
   // siguiente rey vivo
   const order=G.kings; let idx=order.indexOf(G.current);
   for(let n=0;n<order.length;n++){ idx=(idx+1)%order.length; if(G.alive.includes(order[idx])){ G.current=order[idx]; break; } }
+  const firstAlive=order.find(x=>G.alive.includes(x));
+  if(G.current===firstAlive) G.turnNo=(G.turnNo||1)+1;   // se ha cerrado la ronda → nuevo turno
   startTurn(false);
 }
-$('endturn').onclick=()=>{ if(aiBusy||animating) return; Audio_.tap(); endTurn(); };
+$('endturn').onclick=()=>{ if(aiBusy||animating) return; Audio_.tap(); resolveRound(); };
 
 function spendAction(){ G.actions--; updateHUD(); if(G.actions<=0){ toast('Sin acciones · termina el turno'); } }
 
@@ -965,7 +1081,7 @@ function openSheet(id){
     const minCoste = Math.min(...tiposPermitidos(r.grade).map(costeTipo));
     const canRecruit = G.actions>0 && G._gold[G.current]>=minCoste && (room>0 || (r.grade===2 && r.cat<P.CAP_CAT));
     const canUpgrade = G.actions>0 && r.grade<2 && G._gold[G.current]>=P.COSTE_MEJORA[r.grade];
-    const canMove    = G.actions>0 && tot(r)>1;
+    const canMove    = G.actions>0 && tot(r)>1 && !G.plan[id];
     const canScout   = r.grade===2 && G.actions>0 && G._gold[G.current]>=P.COSTE_EXPLORA && fronteraReino().size>0;
     html += `<div class="sheet-actions">
       <button class="actbtn" id="a-recruit" ${canRecruit?'':'disabled'}><img src="btn_recruit.png" alt="Reclutar tropas"><span class="cap">según la región</span></button>
@@ -975,6 +1091,7 @@ function openSheet(id){
     if(r.grade===2){
       html += `<button class="btn ghost" id="a-scout" ${canScout?'':'disabled'} style="margin-top:.5rem">Explorar tu frontera · ${P.COSTE_EXPLORA} oro</button>`;
     }
+    if(G.plan[id]) html += `<div class="hint" style="color:var(--accent);margin-top:.4rem">orden: enviar ${compTot(G.plan[id].comp)} → ${nombreReg(G.plan[id].to)}</div><button class="btn ghost" id="a-cancel" style="margin-top:.3rem">Cancelar orden</button>`;
   } else {
     html += `<div class="hint">${ownerTxt} · selecciona una región tuya adyacente para atacar</div>`;
   }
@@ -986,6 +1103,7 @@ function openSheet(id){
     if(mb&&!mb.disabled) mb.onclick=()=>enterTargetMode(id);
     if(ub&&!ub.disabled) ub.onclick=()=>doUpgrade(id);
     if(sb&&!sb.disabled) sb.onclick=()=>enterScoutMode(id);
+    const cb=$('a-cancel'); if(cb) cb.onclick=()=>cancelOrder(id);
   }
 }
 
@@ -1075,9 +1193,9 @@ function animateTroops(from, to, comp, onDone){   // puntos de colores viajando 
   const dots=cols.map((color,i)=>{
     const c=ce('circle'); c.setAttribute('r','8'); c.setAttribute('fill',color);
     c.setAttribute('stroke','#1a130b'); c.setAttribute('stroke-width','1.5'); gAnim.appendChild(c);
-    return {c, sx:ox+off(), sy:oy+off(), ex:dx+off(), ey:dy+off(), delay:i*40};
+    return {c, sx:ox+off(), sy:oy+off(), ex:dx+off(), ey:dy+off(), delay:i*55};
   });
-  const DUR=620, ease=p=>p<0.5?2*p*p:1-Math.pow(-2*p+2,2)/2;
+  const DUR=1300, ease=p=>p<0.5?2*p*p:1-Math.pow(-2*p+2,2)/2;
   const now0=()=> (typeof performance!=='undefined'&&performance.now)?performance.now():Date.now();
   const t0=now0();
   function frame(){
@@ -1088,7 +1206,7 @@ function animateTroops(from, to, comp, onDone){   // puntos de colores viajando 
     else requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
-  setTimeout(()=>{ if(animating){ dots.forEach(d=>d.c&&d.c.remove()); animating=false; } done(); }, DUR+dots.length*40+500);
+  setTimeout(()=>{ if(animating){ dots.forEach(d=>d.c&&d.c.remove()); animating=false; } done(); }, DUR+dots.length*55+500);
 }
 function resolveMoveAttack(from, to){
   const a=G.regions[from], b=G.regions[to];
@@ -1147,8 +1265,7 @@ function composeSheet(from, to, friendly){
   upd();
   $('cmp-cancel').onclick=()=>{ mode='sel'; onRegionTap(from); };
   $('cmp-ok').onclick=()=>{ if(compTot(sel)<1){ toast('Elige cuántas tropas'); return; }
-    const cp={inf:sel.inf,arq:sel.arq,cat:sel.cat}; closeSheet();
-    animateTroops(from, to, cp, ()=> friendly ? reinforceComp(from,to,cp) : combatTyped(from,to,cp) ); };
+    const cp={inf:sel.inf,arq:sel.arq,cat:sel.cat}; closeSheet(); planEnqueue(from, to, cp); };
 }
 function reinforceComp(from,to,sel){
   const a=G.regions[from], b=G.regions[to];
@@ -1325,19 +1442,20 @@ const AI = {
 function beginAITurn(k){
   aiBusy=true; G._ailog=[]; $('endturn').classList.add('hidden'); closeSheet();
   $('cur-name').textContent=KINGS[k].name;
-  $('cur-sub').textContent='la máquina mueve…';
+  $('cur-sub').textContent=`Turno ${G.turnNo||1} · decide…`;
   $('cur-crown').style.color = k==='B' ? 'var(--muted)' : 'var(--accent)';
   $('curtain').classList.add('show');
-  setTimeout(()=>{ $('curtain').classList.remove('show'); autoZoomToActive(); aiPlay(k); }, 1000);
+  setTimeout(()=>{ $('curtain').classList.remove('show'); autoZoomToActive(); aiPlay(k); }, 450);
 }
 function aiPlay(k){
   if(!aiBusy || !G || G.current!==k || !G.alive.includes(k)) return;
-  if(G.actions<=0){ setTimeout(()=>{ if(aiBusy && G && G.current===k) endTurn(); }, AI.pause); return; }
+  if(G.actions<=0){ setTimeout(()=>{ if(aiBusy && G && G.current===k) endTurn(); }, 350); return; }
   const mv=aiBestMove(k);
-  if(!mv){ setTimeout(()=>{ if(aiBusy && G && G.current===k) endTurn(); }, AI.pause); return; }
+  if(!mv){ setTimeout(()=>{ if(aiBusy && G && G.current===k) endTurn(); }, 300); return; }
   aiDo(mv,k);
   if(checkVictory()){ aiBusy=false; return; }   // partida terminada
-  setTimeout(()=>aiPlay(k), AI.pause);
+  const delay = mv.type==='attack' ? 800 : 320;  // atacar "cuesta" más que reclutar; reclutar solo → turno muy corto
+  setTimeout(()=>aiPlay(k), delay);
 }
 function aiDo(mv,k){
   const name=nombreReg(mv.to!=null?mv.to:mv.at); const log=G._ailog||(G._ailog=[]);
@@ -1447,6 +1565,78 @@ function aiBestMove(k){
   return null;
 }
 function aiBorder(k, i){ return MAP.regions[i].adj.some(j=>G.regions[j].owner!==k); }
+
+/* ===== MOTOR SIMULTÁNEO sobre Selenia (paso 1: no enganchado al bucle todavía) ===== */
+function clashReal(cA,cB){                         // choque a campo abierto (sin muralla)
+  const tA=tot(cA),tB=tot(cB);
+  if(tA<=0)return{win:'B',survA:{inf:0,arq:0,cat:0},survB:{inf:cB.inf||0,arq:cB.arq||0,cat:cB.cat||0}};
+  if(tB<=0)return{win:'A',survA:{inf:cA.inf||0,arq:cA.arq||0,cat:cA.cat||0},survB:{inf:0,arq:0,cat:0}};
+  const A=poderAtk(cA),B=poderAtk(cB),adv=(A+B)>0?A/(A+B):0.5,base=Math.min(tA,tB),I=P.CHOQUE;
+  const lB=Math.min(tB,Math.round(base*Math.min(1,adv*I))),lA=Math.min(tA,Math.round(base*Math.min(1,(1-adv)*I)));
+  const sa=applyLosses(cA,tA-lA),sb=applyLosses(cB,tB-lB),x=tot(sa),y=tot(sb);
+  return{win:x>y?'A':y>x?'B':(Math.random()<.5?'A':'B'),survA:sa,survB:sb};
+}
+function assaultReal(atk,b,ref){                   // asalto: atacante vs (guarnición×muralla + refuerzo a campo abierto)
+  const defIn={inf:b.inf,arq:b.arq,cat:b.cat}, muro=murallaFactor(b,atk.cat||0);
+  const tA=tot(atk),dT=tot(defIn)+tot(ref);
+  const A=poderAtk(atk)*tiroBonus(atk.arq,(defIn.arq||0)+(ref.arq||0),dT), D=poderDef(defIn)*muro+poderDef(ref);
+  const adv=(A+D)>0?A/(A+D):0.5,base=Math.min(tA,dT||1),I=P.CHOQUE;
+  const lD=Math.min(dT,Math.round(base*Math.min(1,adv*I))),lA=Math.min(tA,Math.round(base*Math.min(1,(1-adv)*I)));
+  const sAtk=applyLosses(atk,tA-lA),sDT=Math.max(0,dT-lD),ratio=dT>0?sDT/dT:0;
+  return{captured:tot(sAtk)>sDT&&tot(sAtk)>0,survAtk:sAtk,
+    survIn:applyLosses(defIn,Math.round(tot(defIn)*ratio)),survRef:applyLosses(ref,Math.round(tot(ref)*ratio)),muro,defLeft:sDT};
+}
+function resolveSimTurn(orders, INFO){             // resuelve un turno simultáneo sobre G.regions
+  INFO=INFO||{};
+  const ccc=c=>({inf:c.inf||0,arq:c.arq||0,cat:c.cat||0});
+  const march=orders.map(o=>({king:o.king,from:o.from,to:o.to,comp:ccc(o.comp),alive:true}));
+  march.forEach(o=>{ const r=G.regions[o.from]; r.inf-=o.comp.inf; r.arq-=o.comp.arq; r.cat-=o.comp.cat; });
+  for(const a of march){ if(!a.alive)continue; const b=march.find(x=>x.alive&&x!==a&&x.from===a.to&&x.to===a.from);
+    if(!b)continue; const r=clashReal(a.comp,b.comp), win=r.win==='A'?a:b, surv=r.win==='A'?r.survA:r.survB;
+    addComp(G.regions[win.from],surv);
+    INFO[a.to]=INFO[b.to]={kind:'escaramuza',swap:true,champ:win.king,champN:tot(surv),retreatTo:win.from,
+      atks:[{king:a.king,n:tot(a.comp)},{king:b.king,n:tot(b.comp)}]};
+    a.alive=false;b.alive=false; }
+  const byTo={}; march.forEach(o=>{ if(!o.alive||tot(o.comp)<=0)return;(byTo[o.to]||(byTo[o.to]=[])).push(o); });
+  for(const tk in byTo){ const to=+tk, arr=byTo[to], r=G.regions[to], own=r.owner, byK={};
+    arr.forEach(o=>{ (byK[o.king]||(byK[o.king]={inf:0,arq:0,cat:0})); addComp(byK[o.king],o.comp); });
+    const ref=(own&&byK[own])?byK[own]:{inf:0,arq:0,cat:0};
+    let atks=Object.keys(byK).filter(k=>k!==own).map(k=>({king:k,comp:byK[k]}));
+    const info=INFO[to]={atks:atks.map(a=>({king:a.king,n:tot(a.comp)})),refKing:(tot(ref)>0?own:null),refN:tot(ref),
+      defGarr:tot(r),muro:murallaFactor(r,0),ownBefore:own};
+    if(!atks.length){ addComp(r,ref); info.kind='refuerzo'; continue; }
+    if(atks.length>=2){ atks=atks.sort(()=>Math.random()-.5); let ch=atks[0];
+      for(let i=1;i<atks.length;i++){ const x=clashReal(ch.comp,atks[i].comp); ch=x.win==='A'?{king:ch.king,comp:x.survA}:{king:atks[i].king,comp:x.survB}; }
+      const home=arr.filter(o=>o.king===ch.king).sort((p,q)=>tot(q.comp)-tot(p.comp))[0];
+      if(home) addComp(G.regions[home.from],ch.comp); addComp(r,ref);
+      info.kind='escaramuza'; info.champ=ch.king; info.champN=tot(ch.comp); info.retreatTo=home?home.from:null; continue; }
+    const ch=atks[0];
+    if(!own&&tot(r)===0&&tot(ref)===0){ r.owner=ch.king; r.inf=ch.comp.inf;r.arq=ch.comp.arq;r.cat=ch.comp.cat; info.kind='ocupa';info.champ=ch.king;info.champN=tot(ch.comp);info.captured=true; continue; }
+    const wasCap=isCapital(to), loser=own, res=assaultReal(ch.comp,r,ref);
+    info.kind='asalto'; info.champ=ch.king; info.muro=res.muro; info.captured=res.captured;
+    if(res.captured){ r.owner=ch.king; r.inf=res.survAtk.inf;r.arq=res.survAtk.arq;r.cat=res.survAtk.cat; info.champN=tot(res.survAtk);
+      if(wasCap&&loser) eliminateKing(loser,to); }
+    else{ r.inf=res.survIn.inf;r.arq=res.survIn.arq;r.cat=res.survIn.cat; addComp(r,res.survRef);
+      const o=arr.find(x=>x.king===ch.king); if(o){ const v=Math.round(tot(res.survAtk)*(1-P.DESMORAL)); addComp(G.regions[o.from],applyLosses(res.survAtk,v)); }
+      info.defLeft=res.defLeft; } }
+  return INFO;
+}
+function aiPlanOrders(k){                          // la IA planifica hasta ACCIONES movimientos (sin ejecutarlos)
+  const orders=[], used=new Set(); let acts=P.ACCIONES, cands=[];
+  const mine=[]; G.regions.forEach((r,i)=>{ if(r.owner===k) mine.push(i); });
+  for(const from of mine){ const a=G.regions[from]; if(tot(a)<=1)continue;
+    const keep=Math.max(Math.round((AI.keepFrac||0.18)*tot(a)), isCapital(from)?20:P.ORDEN[a.grade]);
+    const sendN=tot(a)-keep; if(sendN<1)continue;
+    const sel=scaleToTotal({inf:a.inf,arq:a.arq,cat:a.cat},sendN); if(tot(sel)<1)continue;
+    for(const to of MAP.regions[from].adj){ const b=G.regions[to]; if(b.owner===k)continue;
+      const ev=aiEvalAttack(sel,to,k); if(!ev.captures||ev.A<(AI.margin||1.05)*ev.D)continue;
+      cands.push({from,to,sel,score:aiRegionValue(to,k)-ev.atkLoss*0.05}); } }
+  cands.sort((a,b)=>b.score-a.score);
+  for(const c of cands){ if(acts<=0)break; if(used.has(c.from))continue; used.add(c.from); acts--;
+    orders.push({king:k,from:c.from,to:c.to,comp:c.sel}); }
+  return orders;
+}
+
 function aiRecruitSpot(k){
   const cap=G.capOf[k];
   const room=r=>Math.max(0, Math.floor(r.pop*P.RECLUTA_PCT)-(r.inf+r.arq));
@@ -1468,7 +1658,7 @@ function aiUpgradeSpot(k, gold){
 
 function saveGame(){ if(!G||!G.alive||G.alive.length<=1) return;
   try{ localStorage.setItem('reyes_save', JSON.stringify({ num:G.num, current:G.current, alive:G.alive,
-    actions:G.actions, started:G.started, gold:G._gold, dom:G.dom||{}, ai:(G.ai||[]).join(''),
+    actions:G.actions, started:G.started, gold:G._gold, dom:G.dom||{}, ai:(G.ai||[]).join(''), turnNo:G.turnNo||1,
     regions:G.regions.map(r=>({o:r.owner,g:r.grade,p:r.pop,i:r.inf,a:r.arq,c:r.cat,R:r.rica?1:0,U:r.unrest?1:0,I:r.intel||{}})) })); }catch(e){} }
 function clearSave(){ try{ localStorage.removeItem('reyes_save'); }catch(e){} }
 function loadSave(){ try{ return JSON.parse(localStorage.getItem('reyes_save')||'null'); }catch(e){ return null; } }
@@ -1480,11 +1670,11 @@ function restoreGame(s){
     for(const x in intel){ const v=intel[x]; if(typeof v==='number') intel[x]={i:v,a:0,c:0}; } // guardados v31–36: número → foto
     if(!d.I && d.k){ intel={}; const t=(d.i||0)+(d.a||0)+(d.c||0); d.k.split('').forEach(x=>{ if(x) intel[x]={i:t,a:0,c:0}; }); } // guardados aún más viejos
     return {owner:(d.o==null?null:d.o),grade:d.g||0,pop:d.p||0,inf:d.i||0,arq:d.a||0,cat:d.c||0,intel,rica:!!d.R,unrest:!!d.U}; });
-  G={ regions, kings, capOf, alive:s.alive, current:s.current, actions:s.actions, started:!!s.started, num:s.num, _gold:s.gold||{}, dom:s.dom||{}, ai:(s.ai||'').split('').filter(Boolean) };
+  G={ regions, kings, capOf, alive:s.alive, current:s.current, actions:s.actions, started:!!s.started, num:s.num, _gold:s.gold||{}, dom:s.dom||{}, ai:(s.ai||'').split('').filter(Boolean), turnNo:s.turnNo||1 };
   buildMap(); sel=null; adjSet=new Set(); mode='idle'; refreshMap(); updateHUD();
-  showScreen('screen-game'); $('endturn').classList.remove('hidden'); Music.play('game');
-  if(isAI(G.current)){ beginAITurn(G.current); }    // si guardó en turno de la máquina, que siga
-  else { aiBusy=false; autoZoomToActive(); toast('Partida reanudada'); }
+  showScreen('screen-game'); $('endturn').classList.remove('hidden'); $('endturn').textContent='Listo ▸'; Music.play('game');
+  G.phase='plan'; G.current='W'; G.plan={}; aiBusy=false; animating=false;
+  autoZoomToActive(); toast('Partida reanudada · planifica tus acciones');
 }
 // guarda al minimizar / ocultar la app
 ['pagehide','visibilitychange'].forEach(ev=>window.addEventListener(ev,()=>{ if(document.visibilityState!=='visible') saveGame(); }));
@@ -1492,8 +1682,8 @@ function restoreGame(s){
 /* ============================================================
    MENÚ / OVERLAYS
    ============================================================ */
-let pendingKings=2;
-let pendingAI=1;
+let pendingKings=3;
+let pendingAI=2;
 $('b-local').onclick=()=>{ Audio_.tap(); $('setup-overlay').classList.add('show'); };
 $('b-howto').onclick=()=>{ Audio_.tap(); $('howto-overlay').classList.add('show'); };
 $('howto-close').onclick=()=>$('howto-overlay').classList.remove('show');
@@ -1511,26 +1701,18 @@ $('b-install').onclick=async ()=>{ Audio_.tap();
   else { toast('Abre el menú ⋮ del navegador y elige “Instalar app” / “Añadir a pantalla de inicio”'); }
 };
 function syncAiOptions(){
-  const o2 = document.querySelector('#aisel .opt[data-ai="2"]');
-  const allow2 = pendingKings>=3;
-  if(o2){ o2.style.opacity = allow2?'':'.35'; o2.style.pointerEvents = allow2?'':'none'; }
-  if(pendingAI > pendingKings-1) pendingAI = pendingKings-1;   // como máx. reyes-1 IA
+  pendingKings=3;
+  if(pendingAI > 2) pendingAI = 2;
   document.querySelectorAll('#aisel .opt').forEach(x=>x.classList.toggle('on', +x.dataset.ai===pendingAI));
-  const human = pendingKings - pendingAI;
+  const human = 3 - pendingAI;
   $('setup-note').textContent =
-    pendingAI===0 ? (pendingKings===2
-        ? 'Paso y juega: 2 humanos. El tercer trono queda neutral.'
-        : 'Paso y juega: 3 humanos en rotación.')
+    pendingAI===0 ? 'Paso y juega: 3 humanos en rotación.'
     : `${human} humano${human>1?'s':''} contra ${pendingAI} rey${pendingAI>1?'es':''} de la máquina. Tú juegas como Blanco.`;
 }
-$('kingsel').onclick=e=>{ const o=e.target.closest('.opt'); if(!o)return;
-  document.querySelectorAll('#kingsel .opt').forEach(x=>x.classList.remove('on')); o.classList.add('on');
-  pendingKings=+o.dataset.n; syncAiOptions(); Audio_.tap();
-};
-$('aisel').onclick=e=>{ const o=e.target.closest('.opt'); if(!o||o.style.pointerEvents==='none')return;
+$('aisel').onclick=e=>{ const o=e.target.closest('.opt'); if(!o)return;
   pendingAI=+o.dataset.ai; syncAiOptions(); Audio_.tap();
 };
-$('setup-start').onclick=()=>{ Audio_.tap(); $('setup-overlay').classList.remove('show'); newGame(pendingKings, pendingAI); };
+$('setup-start').onclick=()=>{ Audio_.tap(); $('setup-overlay').classList.remove('show'); newGame(3, pendingAI); };
 $('setup-cancel').onclick=()=>$('setup-overlay').classList.remove('show');
 function gotoMenu(){ aiBusy=false; clearSave(); showScreen('screen-menu'); $('curtain').classList.remove('show'); $('endturn').classList.add('hidden'); closeSheet(); Music.play('intro'); }
 $('btn-menu').onclick=()=>{ if(confirm('¿Abandonar la partida y volver al menú?')){ gotoMenu(); } };
@@ -1547,7 +1729,7 @@ window.addEventListener('load', ()=>{
   setTimeout(()=>{ const s=$('app-splash'); s.classList.add('hiding'); setTimeout(()=>s.style.display='none',650); }, 1400);
 });
 (async function showVersion(){
-  let v='reyes-v42';
+  let v='reyes-v45';
   try{ if('caches' in window){ const keys=await caches.keys(); const k=keys.find(x=>/^reyes-v/.test(x)); if(k)v=k; } }catch(e){}
   $('version-label').textContent=v.replace('reyes-','').toUpperCase()+' · SOCRAM GAMES';
 })();
