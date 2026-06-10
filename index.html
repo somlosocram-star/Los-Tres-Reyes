@@ -922,6 +922,7 @@ function showCurtain(k, neto, regs){
   $('curtain').classList.add('show');
 }
 $('cur-go').onclick=()=>{ Audio_.tap();
+  if(G && G.online){ $('curtain').classList.remove('show'); autoZoomToActive(); return; }
   if(G.phase==='report'){ $('curtain').classList.remove('show'); startRound(); return; }
   $('curtain').classList.remove('show'); autoZoomToActive();
 };
@@ -961,6 +962,7 @@ function planEnqueue(from,to,comp){
 function cancelOrder(from){ if(G.plan[from]){ delete G.plan[from]; G.actions++; deselect(); refreshMap(); updateHUD(); } }
 function resolveRound(){
   if(aiBusy||animating) return;
+  if(G && G.online){ toast('La resolución sincronizada llega en el siguiente paso'); return; }
   G.phase='resolving'; aiBusy=true; closeSheet(); deselect(); $('endturn').classList.add('hidden');
   let t=20; const c=$('count');
   const show=()=>{ c.textContent=`Los otros reyes deciden… ${t}  ·  toca para resolver ya`; };
@@ -1923,7 +1925,7 @@ function renderOnlineChoice(){
 function seatFilled(st){ return !!(st && (st.id || st.ai)); }
 function renderLobby(room){
   if(!room){ roomClosed(); return; }
-  if(room.status==='playing'){ renderPlaying(room); return; }
+  if(room.status==='playing'){ $('online-overlay').classList.remove('show'); Online.enter(room); return; }
   const seats=room.seats||{}; const host=room.host===Net.cid;
   const rows=['W','B','G'].map(s=>{ const st=seats[s]||{};
     const who = st.ai ? '<span style="color:var(--muted)">IA</span>'
@@ -1945,14 +1947,44 @@ function renderLobby(room){
   const sb=$('ol-start'); if(sb&&!sb.disabled) sb.onclick=async()=>{ Audio_.tap(); try{ await Net.start(); }catch(e){ olMsg('No se pudo empezar'); } };
   $('ol-leave').onclick=async()=>{ Audio_.tap(); await Net.leave(); $('online-overlay').classList.remove('show'); };
 }
-function renderPlaying(room){
-  $('ol-body').innerHTML = `
-    <h2>¡Sala lista!</h2>
-    <div class="lead">${room.mode==='2h1ai'?'2 humanos + 1 IA':'3 humanos'} · código ${Net.code}</div>
-    <p style="color:var(--muted)">La partida sincronizada llega en la siguiente fase. De momento esto confirma que la conexión entre dispositivos funciona: los asientos se han repartido y todos veis la misma sala.</p>
-    <button class="btn ghost" id="ol-leave">Salir</button>`;
-  $('ol-leave').onclick=async()=>{ Audio_.tap(); await Net.leave(); $('online-overlay').classList.remove('show'); };
+/* ===== FASE 2 · ladrillo 1: arranque sincronizado (host emite, todos ven su trono) ===== */
+function netSerialize(){
+  return { num:3, alive:G.alive, gold:G._gold||{}, dom:G.dom||{}, ai:(G.aiSeats||[]).join(''), turnNo:G.turnNo||1,
+    regions:G.regions.map(r=>({o:r.owner,g:r.grade,p:r.pop,i:r.inf,a:r.arq,c:r.cat,R:r.rica?1:0,U:r.unrest?1:0,I:r.intel||{}})) };
 }
+function netApply(s, seat){
+  const kings=['W','B','G']; const capOf={W:CAP.W,B:CAP.B,G:CAP.G};
+  const regions=MAP.regions.map((rd,i)=>{ const d=(s.regions&&s.regions[i])||{};
+    return {owner:(d.o==null?null:d.o),grade:d.g||0,pop:d.p||0,inf:d.i||0,arq:d.a||0,cat:d.c||0,intel:d.I||{},rica:!!d.R,unrest:!!d.U}; });
+  G={ regions, kings, capOf, alive:s.alive||['W','B','G'], current:seat, actions:0, started:true, num:3,
+      _gold:s.gold||{}, dom:s.dom||{}, ai:(s.ai||'').split('').filter(Boolean), turnNo:s.turnNo||1,
+      online:true, seat:seat, host:false, plan:{}, phase:'plan' };
+  buildMap(); sel=null; adjSet=new Set(); mode='idle'; refreshMap(); updateHUD();
+  showScreen('screen-game'); Music.play('game'); $('endturn').classList.add('hidden');
+  $('cur-name').textContent='Turno '+(G.turnNo||1); $('cur-crown').style.color='var(--accent)';
+  $('cur-sub').innerHTML='Eres el Rey '+KING_LABEL[seat]+'<br><small style="color:var(--muted)">vista sincronizada · las acciones llegan en el siguiente paso</small>';
+  $('cur-go').textContent='Ver el mapa'; $('curtain').classList.add('show'); autoZoomToActive();
+}
+const Online = {
+  started:false, _turn:null,
+  enter(room){
+    if(!room) return;
+    if(room.host===Net.cid){                 // ── HOST = Blanco ──
+      if(this.started) return; this.started=true;
+      const aiSeats=['W','B','G'].filter(s=>room.seats[s]&&room.seats[s].ai);
+      newGame(3, aiSeats.length);             // genera Selenia + economía de la ronda 1
+      G.online=true; G.seat='W'; G.host=true; G.aiSeats=aiSeats; G.actions=0;
+      Net.roomRef().child('state').set(netSerialize());   // emite el estado a los invitados
+      $('cur-name').textContent='Turno '+(G.turnNo||1);
+      $('cur-sub').innerHTML='Eres el Rey Blanco (anfitrión)<br><small style="color:var(--muted)">vista sincronizada · las acciones llegan en el siguiente paso</small>';
+      $('cur-go').textContent='Ver el mapa'; $('endturn').classList.add('hidden');
+    } else {                                  // ── INVITADO = Negro / Gris ──
+      if(!room.state) return;                 // aún no ha emitido el host
+      if(this._turn===room.turnNo) return;    // ya aplicado
+      this._turn=room.turnNo; netApply(room.state, Net.seat);
+    }
+  }
+};
 function roomClosed(){
   $('ol-body').innerHTML = `<h2>Sala cerrada</h2><div class="lead">el anfitrión salió o se perdió la conexión</div>
     <button class="btn primary" id="ol-back">Volver</button>`;
@@ -1971,7 +2003,7 @@ window.addEventListener('load', ()=>{
   setTimeout(()=>{ const s=$('app-splash'); s.classList.add('hiding'); setTimeout(()=>s.style.display='none',650); }, 1400);
 });
 (async function showVersion(){
-  let v='reyes-v57';
+  let v='reyes-v58';
   try{ if('caches' in window){ const keys=await caches.keys(); const k=keys.find(x=>/^reyes-v/.test(x)); if(k)v=k; } }catch(e){}
   $('version-label').textContent=v.replace('reyes-','').toUpperCase()+' · SOCRAM GAMES';
 })();
