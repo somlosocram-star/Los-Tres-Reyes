@@ -246,6 +246,11 @@ body:not(.light) .board-img{filter:brightness(.86) contrast(1.02);} /* atenúa u
 #curtain .king-sub{font-family:'IBM Plex Mono',monospace;font-size:.7rem;letter-spacing:.26em;text-transform:uppercase;color:var(--muted);margin-bottom:2rem;}
 #curtain .crown-big{width:80px;height:80px;border-radius:50%;border:1px solid var(--accent);display:flex;align-items:center;justify-content:center;}
 #curtain .crown-big svg{width:46px;height:46px;}
+#conquest{position:fixed;inset:0;z-index:74;background:var(--bg);display:none;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:1.6rem;cursor:pointer;}
+#conquest.show{display:flex;animation:fadeIn .3s ease;}
+#conquest img{width:min(86vw,440px);border-radius:10px;box-shadow:0 12px 44px rgba(0,0,0,.5);}
+#conquest .cq-title{font-size:2rem;font-weight:700;margin:1.1rem 0 .25rem;color:var(--accent);}
+#conquest .cq-sub{font-family:'IBM Plex Mono',monospace;font-size:.66rem;letter-spacing:.22em;text-transform:uppercase;color:var(--muted);}
 
 /* overlays (tutorial / fin / setup) */
 .overlay{position:fixed;inset:0;z-index:80;background:rgba(0,0,0,.55);display:none;align-items:center;justify-content:center;padding:1.4rem;}
@@ -330,6 +335,7 @@ body.light .overlay{background:rgba(40,38,32,.4);}
 </div>
 
 <!-- cortina de turno -->
+<div id="conquest"><img id="cq-img" alt=""><div class="cq-title">¡Plaza tomada!</div><div class="cq-sub">toca para el parte</div></div>
 <div id="curtain">
   <div class="crown-big"><svg id="cur-crown" viewBox="0 0 64 64" style="color:var(--accent)"><use href="#ico-crown"/></svg></div>
   <div class="king-name" id="cur-name">Rey</div>
@@ -972,8 +978,17 @@ function doResolve(){
     G.turnNo=(G.turnNo||1)+1; aiBusy=false; animating=false;
     refreshMap(); updateHUD();
     if(checkVictory()) return;
-    roundReport(before, seen, INFO);
+    const gane = G.regions.some((r,i)=>r.owner==='W' && before[i]!=='W');   // ¿he ganado algún territorio?
+    if(gane) showConquest(()=>roundReport(before, seen, INFO));
+    else roundReport(before, seen, INFO);
   });
+}
+function showConquest(onTap){
+  const el=$('conquest'), img=$('cq-img');
+  img.onerror=()=>{ img.style.display='none'; }; img.style.display='block'; img.src='conquista.jpg';
+  el.classList.add('show'); Audio_.vitores();
+  const go=()=>{ el.removeEventListener('pointerdown', go); el.classList.remove('show'); if(typeof onTap==='function') onTap(); };
+  el.addEventListener('pointerdown', go);
 }
 function aiRecruitRound(k){                          // la IA gasta algo de oro en rearmarse antes de planificar
   let gold=G._gold[k]||0; const room=r=>Math.max(0,Math.floor(r.pop*P.RECLUTA_PCT)-(r.inf+r.arq));
@@ -1044,7 +1059,6 @@ function roundReport(before, seen, INFO){
     else if(!r.owner && before[i] && before[i]!=='W') news.push(`${nombreReg(i)} queda neutral`); } });
   if(!lines.length && !news.length) lines.push('Sin novedades en tus fronteras');
   if(news.length) lines.push('— En Selenia —', ...news);
-  if(G.regions.some((r,i)=>r.owner==='W' && before[i]!=='W')) Audio_.vitores();   // has ganado al menos un territorio
   G.phase='report';
   $('cur-name').textContent='Parte · Turno '+((G.turnNo||1)-1);
   $('cur-sub').innerHTML=`<small style="line-height:1.6">${lines.join('<br>')}</small>`;
@@ -1809,7 +1823,7 @@ window.addEventListener('load', ()=>{
   setTimeout(()=>{ const s=$('app-splash'); s.classList.add('hiding'); setTimeout(()=>s.style.display='none',650); }, 1400);
 });
 (async function showVersion(){
-  let v='reyes-v54';
+  let v='reyes-v55';
   try{ if('caches' in window){ const keys=await caches.keys(); const k=keys.find(x=>/^reyes-v/.test(x)); if(k)v=k; } }catch(e){}
   $('version-label').textContent=v.replace('reyes-','').toUpperCase()+' · SOCRAM GAMES';
 })();
