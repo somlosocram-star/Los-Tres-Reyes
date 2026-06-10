@@ -321,6 +321,7 @@ body.light .overlay{background:rgba(40,38,32,.4);}
   </div>
   <button id="endturn" class="hidden">Listo ▸</button>
   <div id="count" style="position:fixed;left:0;right:0;bottom:0;transform:translateY(120%);transition:transform .25s;background:#161009;color:#efe9dd;text-align:center;padding:.9rem;z-index:60;font-family:'IBM Plex Mono',monospace;letter-spacing:.06em;font-size:.82rem"></div>
+  <div id="netwait" style="position:fixed;left:50%;top:calc(4.4rem + env(safe-area-inset-top));transform:translateX(-50%) translateY(-220%);transition:transform .25s;background:#161009;color:#efe9dd;text-align:center;padding:.5rem .95rem;border-radius:20px;z-index:62;font-family:'IBM Plex Mono',monospace;letter-spacing:.04em;font-size:.74rem;box-shadow:0 4px 16px rgba(0,0,0,.45);max-width:92vw"></div>
   <div id="toast"></div>
 </div>
 
@@ -1964,8 +1965,10 @@ function netBuild(s, seat){   // reconstruye G para planificar como 'seat'
   showScreen('screen-game'); Music.play('game');
   $('endturn').classList.remove('hidden'); $('endturn').textContent='Listo ▸';
   const c=$('count'); if(c) c.style.transform='translateY(120%)';
-  Online.log=[];
+  Online.log=[]; Online._submitted=false; Online.stopCountdown();
 }
+function netWaitShow(t){ const e=$('netwait'); if(!e) return; e.textContent=t; e.style.transform='translateX(-50%) translateY(0)'; }
+function netWaitHide(){ const e=$('netwait'); if(!e) return; e.style.transform='translateX(-50%) translateY(-220%)'; }
 function planCurtain(seat){
   const warn=(Online.room&&Online.room.report&&Online.room.report.warn&&Online.room.report.warn[seat])||[];
   $('cur-name').textContent='Turno '+(G.turnNo||1); $('cur-crown').style.color='var(--accent)';
@@ -2002,6 +2005,7 @@ function showOnlineDefeat(){
 }
 const Online = {
   started:false, _turn:null, log:[], _resolving:false, snap:null, room:null,
+  _submitted:false, _tick:null, _counting:false, _dl:null, _deadlineSet:false, _dlTimer:null, _lastOrders:null, _prevOwners:null,
   enter(room){
     if(!room) return; this.room=room;
     if(!this.started){
@@ -2023,7 +2027,8 @@ const Online = {
       return;
     }
     if(room.status==='ended'){ this.applyRound(room); return; }   // ya en juego
-    if(room.turnNo!==this._turn) this.applyRound(room);
+    if(room.turnNo!==this._turn){ this.applyRound(room); return; }
+    if(room.deadline && !this._counting) this.startCountdown(room.deadline);   // cuenta atrás compartida (20 s)
   },
   applyRound(room){
     const s=room.state; if(!s) return; const seat=Net.seat;
@@ -2039,19 +2044,43 @@ const Online = {
       if(gained) showConquest(go); else go();
     } else planCurtain(seat);
   },
-  submit(){
-    if(!this.room) return;
-    closeSheet(); deselect(); $('endturn').classList.add('hidden');
+  submit(auto){
+    if(!this.room || this._submitted) return;
+    this._submitted=true;
+    closeSheet(); deselect(); G.actions=0; $('endturn').classList.add('hidden');
     const moves={}; Object.keys(G.plan||{}).forEach(f=>{ moves[f]={to:G.plan[f].to, comp:G.plan[f].comp}; });
     Net.roomRef().child('orders/'+Net.seat).set({ ready:true, log:this.log||[], moves:moves, at:firebase.database.ServerValue.TIMESTAMP });
-    const c=$('count'); if(c){ c.textContent='Esperando a los demás reyes…'; c.style.transform='translateY(0)'; }
+    if(!this._counting) netWaitShow('Listo · esperando la cuenta atrás…');
   },
+  startCountdown(deadline){
+    if(this._counting && this._dl===deadline) return;
+    this._counting=true; this._dl=deadline; if(this._tick) clearInterval(this._tick);
+    const upd=()=>{ const rem=Math.max(0, Math.ceil((deadline-Date.now())/1000));
+      if(rem>0){ netWaitShow((this._submitted?'Resolución en ':'Decide · ')+rem+' s'); }
+      else { clearInterval(this._tick); this._tick=null;
+        if(!this._submitted) this.submit(true);          // auto-envío del plan parcial
+        netWaitShow('Resolviendo…'); } };
+    upd(); this._tick=setInterval(upd, 250);
+  },
+  stopCountdown(){ if(this._tick){ clearInterval(this._tick); this._tick=null; } this._counting=false; this._dl=null; netWaitHide(); },
   onOrders(orders){
     if(Net.seat!=='W' || this._resolving || !this.snap) return;     // solo el host resuelve
+    this._lastOrders=orders||{};
     const alive=(this.snap.alive||['W','B','G']); const ai=(this.snap.ai||'').split('').filter(Boolean);
-    const needed=alive.filter(s=>!ai.includes(s));
-    if(!needed.length || !needed.every(s=>orders && orders[s] && orders[s].ready)) return;
-    this._resolving=true; this.hostResolve(orders||{});
+    const needed=alive.filter(s=>!ai.includes(s));                  // asientos HUMANOS vivos (la IA no cuenta)
+    if(!needed.length) return;
+    const ready=needed.filter(s=>orders && orders[s] && orders[s].ready).length;
+    if(ready>=1 && !this._deadlineSet){                             // primer humano listo → cuenta atrás de 20 s
+      this._deadlineSet=true;
+      Net.roomRef().child('deadline').set(Date.now()+20000);
+      this._dlTimer=setTimeout(()=>this.fire(), 20700);            // por si alguien no auto-envía (desconexión)
+    }
+    if(ready>=needed.length) this.fire();                           // todos los humanos listos → ya
+  },
+  fire(){
+    if(this._resolving || !this.snap) return; this._resolving=true;
+    if(this._dlTimer){ clearTimeout(this._dlTimer); this._dlTimer=null; }
+    this.hostResolve(this._lastOrders||{});
   },
   rebuild(s){
     G.regions=MAP.regions.map((rd,i)=>{ const d=(s.regions&&s.regions[i])||{};
@@ -2098,9 +2127,9 @@ const Online = {
     if(ended===null){ warn=this.economyNextRound(news);
       for(const k of G.alive){ if((G.dom[k]||0)>=P.DOM_TURNS){ ended=k; reason='dominio'; break; } } }
     G.turnNo=(G.turnNo||1)+1; this.snap=netSerialize();
-    const upd={ state:this.snap, turnNo:G.turnNo, orders:null, report:{ seq:G.turnNo, news:news, warn:warn } };
+    const upd={ state:this.snap, turnNo:G.turnNo, orders:null, deadline:null, report:{ seq:G.turnNo, news:news, warn:warn } };
     if(ended!==null || G.alive.length<=1){ upd.status='ended'; upd.winner=ended; upd.endReason=reason; }
-    Net.roomRef().update(upd).then(()=>{ this._resolving=false; }).catch(()=>{ this._resolving=false; });
+    Net.roomRef().update(upd).then(()=>{ this._resolving=false; this._deadlineSet=false; }).catch(()=>{ this._resolving=false; this._deadlineSet=false; });
   }
 };
 function roomClosed(){
@@ -2121,7 +2150,7 @@ window.addEventListener('load', ()=>{
   setTimeout(()=>{ const s=$('app-splash'); s.classList.add('hiding'); setTimeout(()=>s.style.display='none',650); }, 1400);
 });
 (async function showVersion(){
-  let v='reyes-v59';
+  let v='reyes-v60';
   try{ if('caches' in window){ const keys=await caches.keys(); const k=keys.find(x=>/^reyes-v/.test(x)); if(k)v=k; } }catch(e){}
   $('version-label').textContent=v.replace('reyes-','').toUpperCase()+' · SOCRAM GAMES';
 })();
