@@ -1,6 +1,6 @@
 /* Los Tres Reyes — Service Worker
    Nomenclatura secuencial: reyes-vXX (subir el número en cada entrega). */
-const CACHE = 'reyes-v61';
+const CACHE = 'reyes-v62';
 const ASSETS = [
   './',
   './index.html',
@@ -11,6 +11,7 @@ const ASSETS = [
   './favicon-32.png',
   './selenia.jpg',
   './conquista.jpg',
+  './seal.png',
   './ejercito-blanco.png',
   './ejercito-negro.png',
   './ejercito-gris.png',
