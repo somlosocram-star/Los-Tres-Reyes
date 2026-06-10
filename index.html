@@ -555,7 +555,15 @@ const Audio_ = {
   lose(){ this.blip(200,0.18,'sawtooth',0.12); },
   conquer(){ this.blip(330,0.1,'square',0.12); setTimeout(()=>this.blip(495,0.12,'square',0.12),80); setTimeout(()=>this.blip(660,0.16,'square',0.12),170); },
   victory(){ [523,659,784,1047].forEach((f,i)=>setTimeout(()=>this.blip(f,0.22,'triangle',0.14),i*150)); },
-  sfx(src, vol){ if(!this.on) return; try{ const a=new Audio(src); a.volume=(vol==null?1:vol); a.play().catch(()=>{}); }catch(e){} },
+  sfx(src, vol){ if(!this.on) return; try{
+      this._cache=this._cache||{};
+      let a=this._cache[src];
+      if(!a){ a=new Audio(src); a.preload='auto'; this._cache[src]=a; }   // se conserva: no lo recolecta el GC ni se corta
+      a.volume=(vol==null?1:vol); try{ a.currentTime=0; }catch(e){}
+      a.play().catch(()=>{});
+    }catch(e){} },
+  preloadSfx(){ ['victoria-final.mp3','derrota-final.mp3','vitores.mp3'].forEach(s=>{ this._cache=this._cache||{};
+      if(!this._cache[s]){ const a=new Audio(s); a.preload='auto'; this._cache[s]=a; } }); },
   victoriaFinal(){ this.sfx('victoria-final.mp3', 0.9); },   // grito de victoria (final ganado)
   derrotaFinal(){ this.sfx('derrota-final.mp3', 0.9); },     // derrota final
   vitores(){ this.sfx('vitores.mp3', 0.8); },                // vítores al ganar un territorio
@@ -619,6 +627,7 @@ function regionAreas(){
 }
 
 function newGame(numKings, nAI){
+  Audio_.ensure(); Audio_.preloadSfx();
   nAI = Math.max(0, Math.min((numKings||2)-1, nAI||0));
   const kings = numKings===3 ? ['W','B','G'] : ['W','B'];
   const ai = nAI>0 ? kings.slice(kings.length-nAI) : [];   // las IA ocupan los últimos tronos; el humano es Blanco
@@ -1816,7 +1825,7 @@ window.addEventListener('load', ()=>{
   setTimeout(()=>{ const s=$('app-splash'); s.classList.add('hiding'); setTimeout(()=>s.style.display='none',650); }, 1400);
 });
 (async function showVersion(){
-  let v='reyes-v52';
+  let v='reyes-v53';
   try{ if('caches' in window){ const keys=await caches.keys(); const k=keys.find(x=>/^reyes-v/.test(x)); if(k)v=k; } }catch(e){}
   $('version-label').textContent=v.replace('reyes-','').toUpperCase()+' · SOCRAM GAMES';
 })();
