@@ -968,18 +968,33 @@ function animateMany(orders, done){
   const live=orders.filter(o=>svgEls[o.from]&&svgEls[o.to]&&dotsFor(o.comp).length);
   if(!live.length || typeof requestAnimationFrame!=='function'){ done(); return; }
   animating=true;
-  const all=[]; const DUR=2000, ease=p=>p<.5?2*p*p:1-Math.pow(-2*p+2,2)/2;
-  live.forEach(o=>{ const A=svgEls[o.from], B=svgEls[o.to], off=()=>(Math.random()-0.5)*22;
-    dotsFor(o.comp).forEach((col,i)=>{ const e=ce('circle'); e.setAttribute('r','8'); e.setAttribute('fill',col);
-      e.setAttribute('stroke','#1a130b'); e.setAttribute('stroke-width','1.5'); gAnim.appendChild(e);
-      all.push({e, sx:A.cx+off(), sy:A.cy+off(), ex:B.cx+off(), ey:B.cy+off(), delay:i*55}); }); });
-  const t0=(performance&&performance.now)?performance.now():Date.now();
-  function frame(){ const t=((performance&&performance.now)?performance.now():Date.now())-t0; let end=true;
+  const all=[], toks=[]; const DUR=2000, ease=p=>p<.5?2*p*p:1-Math.pow(-2*p+2,2)/2;
+  const nowt=()=>(performance&&performance.now)?performance.now():Date.now();
+  // 1) estela de puntos de composición (van detrás, con leve retardo)
+  live.forEach(o=>{ const A=svgEls[o.from], B=svgEls[o.to], off=()=>(Math.random()-0.5)*18;
+    dotsFor(o.comp).forEach((col,i)=>{ const e=ce('circle'); e.setAttribute('r','6'); e.setAttribute('fill',col);
+      e.setAttribute('stroke','#1a130b'); e.setAttribute('stroke-width','1.3'); gAnim.appendChild(e);
+      all.push({e, sx:A.cx+off(), sy:A.cy+off(), ex:B.cx+off(), ey:B.cy+off(), delay:160+i*50}); }); });
+  // 2) ficha del bando (encima de la estela), anclada por la base de la tropa, sin rotar
+  live.forEach(o=>{ const A=svgEls[o.from], B=svgEls[o.to];
+    const im=ce('image'); im.setAttribute('width',TOKW); im.setAttribute('height',TOKH);
+    im.setAttribute('preserveAspectRatio','xMidYMax meet'); im.setAttribute('opacity','0');
+    const href=ARMY_TOKEN[o.king]||ARMY_TOKEN.W;
+    im.setAttributeNS('http://www.w3.org/1999/xlink','href',href); im.setAttribute('href',href);
+    gAnim.appendChild(im);
+    toks.push({im, sx:A.cx, sy:A.cy, ex:B.cx, ey:B.cy}); });
+  const t0=nowt();
+  function frame(){ const t=nowt()-t0; let end=true;
     all.forEach(d=>{ const p=Math.max(0,Math.min(1,(t-d.delay)/DUR)); if(p<1)end=false; const e=ease(p);
       d.e.setAttribute('cx', d.sx+(d.ex-d.sx)*e); d.e.setAttribute('cy', d.sy+(d.ey-d.sy)*e); });
-    if(end){ all.forEach(d=>d.e.remove()); animating=false; done(); } else requestAnimationFrame(frame); }
+    toks.forEach(d=>{ const p=Math.max(0,Math.min(1,t/DUR)); if(p<1)end=false; const e=ease(p);
+      const x=d.sx+(d.ex-d.sx)*e, y=d.sy+(d.ey-d.sy)*e;
+      d.im.setAttribute('x', x-TOKW/2); d.im.setAttribute('y', y-TOKH+8);   // base de la tropa sobre el punto
+      d.im.setAttribute('opacity', String(Math.min(1, p<.12? p/.12 : (p>.88?(1-p)/.12:1)))); });
+    if(end){ all.forEach(d=>d.e.remove()); toks.forEach(d=>d.im.remove()); animating=false; done(); }
+    else requestAnimationFrame(frame); }
   requestAnimationFrame(frame);
-  setTimeout(()=>{ if(animating){ all.forEach(d=>d.e&&d.e.remove()); animating=false; } }, DUR+all.length*55+800);
+  setTimeout(()=>{ if(animating){ all.forEach(d=>d.e&&d.e.remove()); toks.forEach(d=>d.im&&d.im.remove()); animating=false; } }, DUR+all.length*50+1400);
 }
 function roundReport(before, seen, INFO){
   const nm=k=>k==='W'?'Tú':KINGS[k].name;
@@ -1180,7 +1195,10 @@ function doScout(from, to){
   toast(`Explorada ${nombreReg(to)} · ${compTxtSeen(b.intel[G.current])}`);
   mode='sel'; afterAction(from);                 // vuelve al panel de la ciudad para encadenar
 }
-const TROOP_DOT = { inf:'#2e7d32', arq:'#e0a400', cat:'#c62828' };   // verde infantería · amarillo arqueros · rojo catapultas
+const TROOP_DOT = { inf:'#2e7d32', arq:'#2f6fb5', cat:'#c62828' };   // verde infantería · azul arqueros · rojo catapultas
+const ARMY_TOKEN = { W:'ejercito-blanco.png', B:'ejercito-negro.png', G:'ejercito-gris.png' };
+const TOKW=66, TOKH=Math.round(TOKW*470/320);   // ficha vertical (bandera arriba, tropa abajo)
+try{ Object.values(ARMY_TOKEN).forEach(s=>{ const im=new Image(); im.src=s; }); }catch(e){}
 function dotsFor(comp){                           // 1 punto por cada 50 tropas (mínimo 1 si hay alguna), por tipo
   const out=[];
   ['inf','arq','cat'].forEach(t=>{ const n=comp[t]||0; if(n<=0) return;
@@ -1417,17 +1435,25 @@ function stepperSheet(opt){
 
 /* ---------- victoria ---------- */
 function checkVictory(){
-  if(G.alive.length<=1){
-    const w=G.alive[0]; endGame(w); return true;
-  }
+  if(!G.alive.includes('W')){ endGame(null, 'derrota'); return true; }   // el humano ha caído → fin
+  if(G.alive.length<=1){ endGame(G.alive[0]); return true; }
   return false;
 }
 function endGame(k, reason){
   $('endturn').classList.add('hidden'); closeSheet(); clearSave();
+  const ei=$('end-img'); ei.onerror=()=>{ ei.style.display='none'; };
+  if(!k || reason==='derrota'){                       // el jugador ha perdido su trono
+    $('end-title').textContent='Has caído';
+    $('end-sub').textContent='Selenia ya no te pertenece';
+    $('end-crown').style.color='var(--muted)';
+    ei.style.display='none';
+    if(Audio_.lose) Audio_.lose();
+    setTimeout(()=>$('end-overlay').classList.add('show'),500);
+    return;
+  }
   $('end-title').textContent = '¡'+KINGS[k].name+'!';
   $('end-sub').textContent = reason==='dominio' ? 'domina Selenia' : 'el reino tiene un solo trono';
   $('end-crown').style.color = k==='B' ? 'var(--muted)' : 'var(--accent)';
-  const ei=$('end-img'); ei.onerror=()=>{ ei.style.display='none'; };
   ei.onload=()=>{ ei.style.display='block'; }; ei.src='fin_victoria.png';
   Audio_.victory();
   setTimeout(()=>$('end-overlay').classList.add('show'),500);
@@ -1732,7 +1758,7 @@ window.addEventListener('load', ()=>{
   setTimeout(()=>{ const s=$('app-splash'); s.classList.add('hiding'); setTimeout(()=>s.style.display='none',650); }, 1400);
 });
 (async function showVersion(){
-  let v='reyes-v46';
+  let v='reyes-v48';
   try{ if('caches' in window){ const keys=await caches.keys(); const k=keys.find(x=>/^reyes-v/.test(x)); if(k)v=k; } }catch(e){}
   $('version-label').textContent=v.replace('reyes-','').toUpperCase()+' · SOCRAM GAMES';
 })();
