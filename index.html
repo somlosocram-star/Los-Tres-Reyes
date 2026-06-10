@@ -1970,6 +1970,7 @@ function netBuild(s, seat){   // reconstruye G para planificar como 'seat'
 function netWaitShow(t){ const e=$('netwait'); if(!e) return; e.textContent=t; e.style.transform='translateX(-50%) translateY(0)'; }
 function netWaitHide(){ const e=$('netwait'); if(!e) return; e.style.transform='translateX(-50%) translateY(-220%)'; }
 function planCurtain(seat){
+  netWaitHide();
   const warn=(Online.room&&Online.room.report&&Online.room.report.warn&&Online.room.report.warn[seat])||[];
   $('cur-name').textContent='Turno '+(G.turnNo||1); $('cur-crown').style.color='var(--accent)';
   $('cur-sub').innerHTML='Rey '+KING_LABEL[seat]+' · planifica tus '+P.ACCIONES+' acciones'+(warn.length?`<br><small style="color:var(--accent)">${warn.join('<br>')}</small>`:'');
@@ -2032,6 +2033,7 @@ const Online = {
   },
   applyRound(room){
     const s=room.state; if(!s) return; const seat=Net.seat;
+    this.stopCountdown(); netWaitHide();                 // el reloj del turno anterior desaparece al resolver
     const prevOwners=this._prevOwners || ((G&&G.regions)?G.regions.map(r=>r.owner):null);
     this._prevOwners=null;
     this._turn=room.turnNo; netBuild(s, seat);
@@ -2039,6 +2041,7 @@ const Online = {
     if(room.status==='ended'){ showOnlineEnd(room.winner||null, seat); return; }
     const rep=room.report;
     if(prevOwners && rep && rep.seq===room.turnNo){
+      if(rep.moved) Audio_.trumpets();                   // trompetas cuando ha habido movimiento de tropas
       const gained=G.regions.some((r,i)=>r.owner===seat && prevOwners[i]!==seat);
       const go=()=>onlineReport(rep, seat);
       if(gained) showConquest(go); else go();
@@ -2127,7 +2130,7 @@ const Online = {
     if(ended===null){ warn=this.economyNextRound(news);
       for(const k of G.alive){ if((G.dom[k]||0)>=P.DOM_TURNS){ ended=k; reason='dominio'; break; } } }
     G.turnNo=(G.turnNo||1)+1; this.snap=netSerialize();
-    const upd={ state:this.snap, turnNo:G.turnNo, orders:null, deadline:null, report:{ seq:G.turnNo, news:news, warn:warn } };
+    const upd={ state:this.snap, turnNo:G.turnNo, orders:null, deadline:null, report:{ seq:G.turnNo, news:news, warn:warn, moved: all.length>0 } };
     if(ended!==null || G.alive.length<=1){ upd.status='ended'; upd.winner=ended; upd.endReason=reason; }
     Net.roomRef().update(upd).then(()=>{ this._resolving=false; this._deadlineSet=false; }).catch(()=>{ this._resolving=false; this._deadlineSet=false; });
   }
@@ -2150,7 +2153,7 @@ window.addEventListener('load', ()=>{
   setTimeout(()=>{ const s=$('app-splash'); s.classList.add('hiding'); setTimeout(()=>s.style.display='none',650); }, 1400);
 });
 (async function showVersion(){
-  let v='reyes-v60';
+  let v='reyes-v61';
   try{ if('caches' in window){ const keys=await caches.keys(); const k=keys.find(x=>/^reyes-v/.test(x)); if(k)v=k; } }catch(e){}
   $('version-label').textContent=v.replace('reyes-','').toUpperCase()+' · SOCRAM GAMES';
 })();
