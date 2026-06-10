@@ -270,6 +270,9 @@ body.light .overlay{background:rgba(40,38,32,.4);}
 .kingsel .opt .n{font-size:2.4rem;font-weight:700;line-height:1;}
 .kingsel .opt .l{font-family:'IBM Plex Mono',monospace;font-size:.56rem;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin-top:.3rem;}
 </style>
+<!-- Firebase: solo para el multijugador online. Si no hay red, el juego local funciona igual. -->
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
 </head>
 <body>
 
@@ -300,7 +303,7 @@ body.light .overlay{background:rgba(40,38,32,.4);}
   <div class="tagline">conquista o muere</div>
   <button class="plaque" id="b-continue" style="display:none"><span class="pl-inner"><span class="pl-title">Continuar partida</span><span class="pl-sub">retomar donde lo dejaste</span></span></button>
   <button class="plaque" id="b-local"><span class="pl-inner"><span class="pl-title">1 jugador</span><span class="pl-sub">tú contra dos reyes de la máquina</span></span></button>
-  <button class="plaque" id="b-online" disabled><span class="pl-inner"><span class="pl-title">Multijugador</span><span class="pl-sub">próximamente</span></span></button>
+  <button class="plaque" id="b-online"><span class="pl-inner"><span class="pl-title">Multijugador</span><span class="pl-sub">crea o únete a una sala</span></span></button>
   <button class="plaque" id="b-howto"><span class="pl-inner"><span class="pl-title">Cómo se juega</span></span></button>
   <button class="btn ghost" id="b-install" style="display:none">Instalar app<span class="sub">añadir a la pantalla de inicio</span></button>
 </div>
@@ -362,6 +365,8 @@ body.light .overlay{background:rgba(40,38,32,.4);}
 </div>
 
 <!-- tutorial -->
+<div id="online-overlay" class="overlay"><div class="card"><div id="ol-body" style="text-align:center"></div></div></div>
+
 <div id="howto-overlay" class="overlay">
   <div class="card">
     <h2>Cómo se juega</h2>
@@ -1814,6 +1819,149 @@ $('end-rematch').onclick=()=>{ $('end-overlay').classList.remove('show'); newGam
 $('end-menu').onclick=()=>{ $('end-overlay').classList.remove('show'); gotoMenu(); };
 
 /* ============================================================
+   MULTIJUGADOR ONLINE — FASE 1: vestíbulo (crear/unirse/asientos)
+   ============================================================ */
+// ↓↓↓ PEGA AQUÍ tu configuración de Firebase (la misma de Subasta / Bagh Chal) ↓↓↓
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyAFp8M5dKmrUYxnfNdWXqHtewxEtpQJTMY",
+  authDomain: "subasta-de-tiempo.firebaseapp.com",
+  databaseURL: "https://subasta-de-tiempo-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId: "subasta-de-tiempo",
+  storageBucket: "subasta-de-tiempo.firebasestorage.app",
+  messagingSenderId: "265857604531",
+  appId: "1:265857604531:web:a087d5dbac48fb206f09c6",
+  measurementId: "G-MESZ6SD8ED"
+};
+// ↑↑↑ sin esto el botón Multijugador avisará de que falta la config ↑↑↑
+const GAME_ID = 'reyes';
+const KING_LABEL = { W:'Blanco', B:'Negro', G:'Gris' };
+
+const Net = {
+  db:null, code:null, seat:null, room:null, _cb:null,
+  cid:(function(){ let c=localStorage.getItem('reyes_cid'); if(!c){ c=Math.random().toString(36).slice(2,10); localStorage.setItem('reyes_cid',c); } return c; })(),
+  available(){ return typeof firebase!=='undefined' && FIREBASE_CONFIG && FIREBASE_CONFIG.databaseURL; },
+  init(){ if(this.db) return true; if(!this.available()) return false;
+    try{ if(!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG); this.db=firebase.database(); return true; }catch(e){ return false; } },
+  roomRef(code){ return this.db.ref('g/'+GAME_ID+'/rooms/'+(code||this.code)); },
+  genCode(){ const A='ABCDEFGHJKLMNPRSTUVWXYZ23456789'; let s=''; for(let i=0;i<4;i++) s+=A[Math.floor(Math.random()*A.length)]; return s; },
+  async create(name, mode){
+    if(!this.init()) throw 'sin-conexion';
+    const code=this.genCode();
+    const seats={ W:{id:this.cid,name:name}, B:{open:true}, G:{open:true} };
+    if(mode==='2h1ai') seats.G={ai:true};
+    await this.roomRef(code).set({ host:this.cid, createdAt:firebase.database.ServerValue.TIMESTAMP, status:'lobby', mode:mode, turnNo:0, seats:seats });
+    this.code=code; this.seat='W'; this._bind(); this._listen(); return code;
+  },
+  async join(code, name){
+    if(!this.init()) throw 'sin-conexion';
+    code=(code||'').toUpperCase().trim(); if(code.length<4) throw 'no-existe';
+    const snap=await this.roomRef(code).once('value');
+    if(!snap.exists()) throw 'no-existe';
+    const room=snap.val(); let mine=null;
+    ['W','B','G'].forEach(s=>{ if(room.seats&&room.seats[s]&&room.seats[s].id===this.cid) mine=s; });
+    if(mine){ this.code=code; this.seat=mine; this._bind(); this._listen(); return mine; }   // reconexión
+    if(room.status!=='lobby') throw 'en-curso';
+    for(const s of ['W','B','G']){
+      const res=await this.roomRef(code).child('seats/'+s).transaction(cur=>{ if(cur&&(cur.id||cur.ai)) return; return {id:this.cid,name:name}; });
+      const v=res.committed&&res.snapshot.val();
+      if(v&&v.id===this.cid){ this.code=code; this.seat=s; this._bind(); this._listen(); return s; }
+    }
+    throw 'llena';
+  },
+  _bind(){   // al perder conexión en el vestíbulo: el host borra la sala; los demás liberan su asiento
+    const r=this.roomRef();
+    if(this.seat==='W') r.onDisconnect().remove();
+    else r.child('seats/'+this.seat).onDisconnect().set({open:true});
+  },
+  _listen(){ this.roomRef().on('value', s=>{ this.room=s.val(); if(this._cb) this._cb(this.room); }); },
+  onRoom(cb){ this._cb=cb; },
+  async setSeatAI(seat, ai){ await this.roomRef().child('seats/'+seat).set(ai?{ai:true}:{open:true}); },
+  async start(){ this.roomRef().onDisconnect().cancel(); await this.roomRef().child('status').set('playing'); },  // ya no se borra al desconectar
+  async leave(){
+    if(!this.code) return; const r=this.roomRef();
+    try{ if(this.seat==='W'){ r.onDisconnect().cancel(); await r.remove(); }
+      else { r.child('seats/'+this.seat).onDisconnect().cancel(); await r.child('seats/'+this.seat).set({open:true}); }
+      r.off(); }catch(e){}
+    this.code=null; this.seat=null; this.room=null; this._cb=null;
+  }
+};
+
+function olMsg(t){ const m=$('ol-msg'); if(m) m.textContent=t||''; }
+const NET_ERR={ 'sin-conexion':'Sin conexión: el multijugador necesita internet y la config de Firebase.', 'no-existe':'No existe una sala con ese código.', 'en-curso':'Esa partida ya está en marcha.', 'llena':'La sala está llena.' };
+
+function showOnlineMenu(){ $('online-overlay').classList.add('show'); renderOnlineChoice(); }
+
+function renderOnlineChoice(){
+  let pendingMode='3h';
+  $('ol-body').innerHTML = `
+    <h2>Multijugador</h2>
+    <div class="lead">crea una sala o únete con un código</div>
+    <input id="ol-name" maxlength="12" placeholder="Tu nombre" style="width:100%;margin:.2rem 0 .8rem;padding:.7rem;border-radius:6px;border:1px solid var(--line);background:var(--panel-2);color:var(--ink);font-family:inherit;font-size:1rem">
+    <div class="kingsel" id="ol-mode" style="margin-bottom:.8rem">
+      <div class="opt on" data-mode="3h"><div class="l">3 humanos</div></div>
+      <div class="opt" data-mode="2h1ai"><div class="l">2 humanos + 1 IA</div></div>
+    </div>
+    <button class="btn primary" id="ol-create">Crear sala</button>
+    <div style="margin:.7rem 0;color:var(--muted);font-family:'IBM Plex Mono',monospace;font-size:.7rem;letter-spacing:.2em">— O —</div>
+    <input id="ol-code" maxlength="6" placeholder="CÓDIGO" style="width:100%;margin-bottom:.6rem;padding:.7rem;border-radius:6px;border:1px solid var(--line);background:var(--panel-2);color:var(--ink);font-family:'IBM Plex Mono',monospace;font-size:1.1rem;letter-spacing:.3em;text-align:center;text-transform:uppercase">
+    <button class="btn" id="ol-join">Unirse</button>
+    <button class="btn ghost" id="ol-cancel">Cancelar</button>
+    <div id="ol-msg" class="mono" style="font-size:.78rem;color:var(--accent);margin-top:.6rem;min-height:1.1em"></div>`;
+  $('ol-mode').onclick=e=>{ const o=e.target.closest('.opt'); if(!o)return; pendingMode=o.dataset.mode;
+    document.querySelectorAll('#ol-mode .opt').forEach(x=>x.classList.toggle('on',x===o)); Audio_.tap(); };
+  const nameOf=()=>($('ol-name').value||'').trim().slice(0,12) || ('Rey-'+Net.cid.slice(0,3));
+  $('ol-create').onclick=async()=>{ olMsg('Creando…'); Audio_.tap();
+    try{ Net.onRoom(r=>{ if(r) renderLobby(r); else roomClosed(); }); await Net.create(nameOf(), pendingMode); }
+    catch(e){ olMsg(NET_ERR[e]||('Error: '+e)); } };
+  $('ol-join').onclick=async()=>{ olMsg('Entrando…'); Audio_.tap();
+    try{ Net.onRoom(r=>{ if(r) renderLobby(r); else roomClosed(); }); await Net.join($('ol-code').value, nameOf()); }
+    catch(e){ olMsg(NET_ERR[e]||('Error: '+e)); } };
+  $('ol-cancel').onclick=()=>{ $('online-overlay').classList.remove('show'); };
+  if(!Net.available()) olMsg('Falta la config de Firebase (pégala en el código) o no hay red.');
+}
+
+function seatFilled(st){ return !!(st && (st.id || st.ai)); }
+function renderLobby(room){
+  if(!room){ roomClosed(); return; }
+  if(room.status==='playing'){ renderPlaying(room); return; }
+  const seats=room.seats||{}; const host=room.host===Net.cid;
+  const rows=['W','B','G'].map(s=>{ const st=seats[s]||{};
+    const who = st.ai ? '<span style="color:var(--muted)">IA</span>'
+              : st.id ? (st.id===Net.cid?('<b>'+ (st.name||'tú') +'</b> · tú'):(st.name||'jugador'))
+              : '<span style="color:var(--muted)">esperando…</span>';
+    return `<div style="display:flex;justify-content:space-between;padding:.55rem .2rem;border-bottom:1px solid var(--line)">
+      <span>Rey ${KING_LABEL[s]}</span><span>${who}</span></div>`; }).join('');
+  const humansNeeded = room.mode==='2h1ai' ? 2 : 3;
+  const humansIn = ['W','B','G'].filter(s=>seats[s]&&seats[s].id).length;
+  const ready = humansIn>=humansNeeded;
+  $('ol-body').innerHTML = `
+    <h2>Sala ${room._code||Net.code}</h2>
+    <div class="lead">comparte el código · ${room.mode==='2h1ai'?'2 humanos + 1 IA':'3 humanos'}</div>
+    <div style="font-family:'IBM Plex Mono',monospace;font-size:2rem;letter-spacing:.4em;margin:.4rem 0 1rem">${Net.code}</div>
+    <div style="text-align:left;margin-bottom:1rem">${rows}</div>
+    ${ host ? `<button class="btn primary" id="ol-start" ${ready?'':'disabled'}>Empezar${ready?'':' · faltan jugadores'}</button>`
+            : `<div class="mono" style="font-size:.78rem;color:var(--muted);margin-bottom:.6rem">esperando a que el anfitrión empiece…</div>` }
+    <button class="btn ghost" id="ol-leave">Salir de la sala</button>`;
+  const sb=$('ol-start'); if(sb&&!sb.disabled) sb.onclick=async()=>{ Audio_.tap(); try{ await Net.start(); }catch(e){ olMsg('No se pudo empezar'); } };
+  $('ol-leave').onclick=async()=>{ Audio_.tap(); await Net.leave(); $('online-overlay').classList.remove('show'); };
+}
+function renderPlaying(room){
+  $('ol-body').innerHTML = `
+    <h2>¡Sala lista!</h2>
+    <div class="lead">${room.mode==='2h1ai'?'2 humanos + 1 IA':'3 humanos'} · código ${Net.code}</div>
+    <p style="color:var(--muted)">La partida sincronizada llega en la siguiente fase. De momento esto confirma que la conexión entre dispositivos funciona: los asientos se han repartido y todos veis la misma sala.</p>
+    <button class="btn ghost" id="ol-leave">Salir</button>`;
+  $('ol-leave').onclick=async()=>{ Audio_.tap(); await Net.leave(); $('online-overlay').classList.remove('show'); };
+}
+function roomClosed(){
+  $('ol-body').innerHTML = `<h2>Sala cerrada</h2><div class="lead">el anfitrión salió o se perdió la conexión</div>
+    <button class="btn primary" id="ol-back">Volver</button>`;
+  Net.code=null; Net.seat=null;
+  $('ol-back').onclick=()=>renderOnlineChoice();
+}
+$('b-online').onclick=()=>{ Audio_.tap(); showOnlineMenu(); };
+
+/* ============================================================
    SPLASH + VERSIÓN (leída de la caché del SW)
    ============================================================ */
 window.addEventListener('load', ()=>{
@@ -1823,7 +1971,7 @@ window.addEventListener('load', ()=>{
   setTimeout(()=>{ const s=$('app-splash'); s.classList.add('hiding'); setTimeout(()=>s.style.display='none',650); }, 1400);
 });
 (async function showVersion(){
-  let v='reyes-v55';
+  let v='reyes-v57';
   try{ if('caches' in window){ const keys=await caches.keys(); const k=keys.find(x=>/^reyes-v/.test(x)); if(k)v=k; } }catch(e){}
   $('version-label').textContent=v.replace('reyes-','').toUpperCase()+' · SOCRAM GAMES';
 })();
