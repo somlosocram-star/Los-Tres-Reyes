@@ -962,7 +962,7 @@ function planEnqueue(from,to,comp){
 function cancelOrder(from){ if(G.plan[from]){ delete G.plan[from]; G.actions++; deselect(); refreshMap(); updateHUD(); } }
 function resolveRound(){
   if(aiBusy||animating) return;
-  if(G && G.online){ toast('La resolución sincronizada llega en el siguiente paso'); return; }
+  if(G && G.online){ Online.submit(); return; }
   G.phase='resolving'; aiBusy=true; closeSheet(); deselect(); $('endturn').classList.add('hidden');
   let t=20; const c=$('count');
   const show=()=>{ c.textContent=`Los otros reyes deciden… ${t}  ·  toca para resolver ya`; };
@@ -1197,13 +1197,13 @@ function openRecruitType(id, t){
   const unidad = t==='inf' ? 'infantería' : t==='arq' ? 'arqueros' : 'catapultas';
   stepperSheet({ title:`${TIPOS[t].n} en ${nombreReg(id)}`, unit:unidad, icon:TROOP_IMG[t], max, val:0, min:0, confirmMin:1,
     info:(q)=>`coste ${q*coste} oro · ${unidad} ${r[t]}→${r[t]+q} · ${tope}`,
-    confirm:(n)=>{ r[t]+=n; G._gold[G.current]-=n*coste; Audio_.recruit(); spendAction(); toast(`Reclutados ${n} ${unidad} en ${nombreReg(id)}`); afterAction(id); } });
+    confirm:(n)=>{ r[t]+=n; G._gold[G.current]-=n*coste; if(G&&G.online&&typeof Online!=='undefined') Online.log.push({t:'rec',id,unit:t,n,cost:n*coste}); Audio_.recruit(); spendAction(); toast(`Reclutados ${n} ${unidad} en ${nombreReg(id)}`); afterAction(id); } });
 }
 
 /* ---------- mejorar ---------- */
 function doUpgrade(id){
   const r=G.regions[id]; const cost=P.COSTE_MEJORA[r.grade];
-  G._gold[G.current]-=cost; r.grade++;
+  G._gold[G.current]-=cost; if(G&&G.online&&typeof Online!=='undefined') Online.log.push({t:'up',id,cost}); r.grade++;
   // al subir de grado, la población salta hacia la franja del nuevo grado
   r.pop = Math.min(P.POB_MAX[r.grade], Math.max(r.pop, Math.round(P.POB_MAX[r.grade]*0.55)));
   Audio_.ok(); spendAction();
@@ -1240,6 +1240,7 @@ function doScout(id){
   if(G._gold[G.current] < cost){ toast('Sin oro para explorar ('+cost+')'); return; }
   const b=G.regions[id];
   G._gold[G.current]-=cost;
+  if(G&&G.online&&typeof Online!=='undefined') Online.log.push({t:'exp',id,cost});
   markIntel(b, G.current);                       // foto fechada (caduca en '+P.EXPL_FADE+' rondas)
   Audio_.ok(); spendAction();
   toast(`Explorada ${nombreReg(id)} · ${compTxtSeen(b.intel[G.current])}`);
@@ -1947,42 +1948,159 @@ function renderLobby(room){
   const sb=$('ol-start'); if(sb&&!sb.disabled) sb.onclick=async()=>{ Audio_.tap(); try{ await Net.start(); }catch(e){ olMsg('No se pudo empezar'); } };
   $('ol-leave').onclick=async()=>{ Audio_.tap(); await Net.leave(); $('online-overlay').classList.remove('show'); };
 }
-/* ===== FASE 2 · ladrillo 1: arranque sincronizado (host emite, todos ven su trono) ===== */
+/* ===== FASE 2 · ladrillo 2: ronda jugable (host-autoritativa) ===== */
 function netSerialize(){
   return { num:3, alive:G.alive, gold:G._gold||{}, dom:G.dom||{}, ai:(G.aiSeats||[]).join(''), turnNo:G.turnNo||1,
     regions:G.regions.map(r=>({o:r.owner,g:r.grade,p:r.pop,i:r.inf,a:r.arq,c:r.cat,R:r.rica?1:0,U:r.unrest?1:0,I:r.intel||{}})) };
 }
-function netApply(s, seat){
+function netBuild(s, seat){   // reconstruye G para planificar como 'seat'
   const kings=['W','B','G']; const capOf={W:CAP.W,B:CAP.B,G:CAP.G};
   const regions=MAP.regions.map((rd,i)=>{ const d=(s.regions&&s.regions[i])||{};
     return {owner:(d.o==null?null:d.o),grade:d.g||0,pop:d.p||0,inf:d.i||0,arq:d.a||0,cat:d.c||0,intel:d.I||{},rica:!!d.R,unrest:!!d.U}; });
-  G={ regions, kings, capOf, alive:s.alive||['W','B','G'], current:seat, actions:0, started:true, num:3,
-      _gold:s.gold||{}, dom:s.dom||{}, ai:(s.ai||'').split('').filter(Boolean), turnNo:s.turnNo||1,
-      online:true, seat:seat, host:false, plan:{}, phase:'plan' };
+  G={ regions, kings, capOf, alive:(s.alive||['W','B','G']).slice(), current:seat, actions:P.ACCIONES, started:true, num:3,
+      _gold:Object.assign({},s.gold||{}), dom:Object.assign({},s.dom||{}), ai:(s.ai||'').split('').filter(Boolean),
+      aiSeats:(s.ai||'').split('').filter(Boolean), turnNo:s.turnNo||1, online:true, seat:seat, host:(Net.seat==='W'), plan:{}, phase:'plan' };
   buildMap(); sel=null; adjSet=new Set(); mode='idle'; refreshMap(); updateHUD();
-  showScreen('screen-game'); Music.play('game'); $('endturn').classList.add('hidden');
+  showScreen('screen-game'); Music.play('game');
+  $('endturn').classList.remove('hidden'); $('endturn').textContent='Listo ▸';
+  const c=$('count'); if(c) c.style.transform='translateY(120%)';
+  Online.log=[];
+}
+function planCurtain(seat){
+  const warn=(Online.room&&Online.room.report&&Online.room.report.warn&&Online.room.report.warn[seat])||[];
   $('cur-name').textContent='Turno '+(G.turnNo||1); $('cur-crown').style.color='var(--accent)';
-  $('cur-sub').innerHTML='Eres el Rey '+KING_LABEL[seat]+'<br><small style="color:var(--muted)">vista sincronizada · las acciones llegan en el siguiente paso</small>';
-  $('cur-go').textContent='Ver el mapa'; $('curtain').classList.add('show'); autoZoomToActive();
+  $('cur-sub').innerHTML='Rey '+KING_LABEL[seat]+' · planifica tus '+P.ACCIONES+' acciones'+(warn.length?`<br><small style="color:var(--accent)">${warn.join('<br>')}</small>`:'');
+  $('cur-go').textContent='Comenzar'; $('curtain').classList.add('show'); autoZoomToActive();
+}
+function onlineReport(rep, seat){
+  const news=(rep&&rep.news)||[]; const warn=(rep&&rep.warn&&rep.warn[seat])||[]; const lines=[];
+  if(news.length) lines.push('— En Selenia —', ...news); else lines.push('Sin cambios de territorio.');
+  if(warn.length) lines.push('— Tu reino —', ...warn);
+  $('cur-name').textContent='Parte'; $('cur-crown').style.color='var(--accent)';
+  $('cur-sub').innerHTML = lines.join('<br>') + `<br><br><small style="color:var(--muted)">planifica tus ${P.ACCIONES} acciones</small>`;
+  $('cur-go').textContent='Comenzar'; $('curtain').classList.add('show'); autoZoomToActive();
+}
+function showOnlineEnd(winner, seat){
+  $('curtain').classList.remove('show'); $('endturn').classList.add('hidden'); closeSheet();
+  const ei=$('end-img'); if(ei) ei.onerror=()=>{ ei.style.display='none'; };
+  if(winner===seat){
+    $('end-title').textContent='¡Has conquistado Selenia!'; $('end-sub').textContent='no queda otro trono en pie';
+    $('end-crown').style.color='var(--accent)'; if(ei){ ei.onload=()=>{ei.style.display='block';}; ei.src='fin_victoria.png'; }
+    Music.pause(); Audio_.victoriaFinal();
+  } else {
+    $('end-title').textContent = winner ? ('Ganó el Rey '+KING_LABEL[winner]) : 'Fin de la partida';
+    $('end-sub').textContent='Selenia ya no te pertenece'; $('end-crown').style.color='var(--muted)';
+    if(ei) ei.style.display='none'; Music.pause(); Audio_.derrotaFinal();
+  }
+  setTimeout(()=>$('end-overlay').classList.add('show'),400);
+}
+function showOnlineDefeat(){
+  $('curtain').classList.remove('show'); $('endturn').classList.add('hidden');
+  $('end-title').textContent='Has caído'; $('end-sub').textContent='Selenia ya no te pertenece';
+  $('end-crown').style.color='var(--muted)'; const ei=$('end-img'); if(ei) ei.style.display='none';
+  Music.pause(); Audio_.derrotaFinal(); setTimeout(()=>$('end-overlay').classList.add('show'),400);
 }
 const Online = {
-  started:false, _turn:null,
+  started:false, _turn:null, log:[], _resolving:false, snap:null, room:null,
   enter(room){
-    if(!room) return;
-    if(room.host===Net.cid){                 // ── HOST = Blanco ──
-      if(this.started) return; this.started=true;
-      const aiSeats=['W','B','G'].filter(s=>room.seats[s]&&room.seats[s].ai);
-      newGame(3, aiSeats.length);             // genera Selenia + economía de la ronda 1
-      G.online=true; G.seat='W'; G.host=true; G.aiSeats=aiSeats; G.actions=0;
-      Net.roomRef().child('state').set(netSerialize());   // emite el estado a los invitados
-      $('cur-name').textContent='Turno '+(G.turnNo||1);
-      $('cur-sub').innerHTML='Eres el Rey Blanco (anfitrión)<br><small style="color:var(--muted)">vista sincronizada · las acciones llegan en el siguiente paso</small>';
-      $('cur-go').textContent='Ver el mapa'; $('endturn').classList.add('hidden');
-    } else {                                  // ── INVITADO = Negro / Gris ──
-      if(!room.state) return;                 // aún no ha emitido el host
-      if(this._turn===room.turnNo) return;    // ya aplicado
-      this._turn=room.turnNo; netApply(room.state, Net.seat);
+    if(!room) return; this.room=room;
+    if(!this.started){
+      if(room.host===Net.cid){                          // ── HOST = Blanco: genera y emite ──
+        this.started=true;
+        const aiSeats=['W','B','G'].filter(s=>room.seats[s]&&room.seats[s].ai);
+        newGame(3, aiSeats.length);
+        G.online=true; G.seat='W'; G.host=true; G.aiSeats=aiSeats;
+        this.snap=netSerialize(); this._turn=1; this.log=[];
+        Net.roomRef().child('state').set(this.snap);
+        Net.roomRef().child('orders').on('value', sn=>this.onOrders(sn.val()));
+        planCurtain('W');
+      } else {                                          // ── INVITADO ──
+        if(!room.state) return;                         // espera a que el host emita
+        this.started=true; this._turn=room.turnNo; netBuild(room.state, Net.seat);
+        if(!G.alive.includes(Net.seat)){ showOnlineDefeat(); return; }
+        planCurtain(Net.seat);
+      }
+      return;
     }
+    if(room.status==='ended'){ this.applyRound(room); return; }   // ya en juego
+    if(room.turnNo!==this._turn) this.applyRound(room);
+  },
+  applyRound(room){
+    const s=room.state; if(!s) return; const seat=Net.seat;
+    const prevOwners=this._prevOwners || ((G&&G.regions)?G.regions.map(r=>r.owner):null);
+    this._prevOwners=null;
+    this._turn=room.turnNo; netBuild(s, seat);
+    if(!G.alive.includes(seat)){ showOnlineDefeat(); return; }
+    if(room.status==='ended'){ showOnlineEnd(room.winner||null, seat); return; }
+    const rep=room.report;
+    if(prevOwners && rep && rep.seq===room.turnNo){
+      const gained=G.regions.some((r,i)=>r.owner===seat && prevOwners[i]!==seat);
+      const go=()=>onlineReport(rep, seat);
+      if(gained) showConquest(go); else go();
+    } else planCurtain(seat);
+  },
+  submit(){
+    if(!this.room) return;
+    closeSheet(); deselect(); $('endturn').classList.add('hidden');
+    const moves={}; Object.keys(G.plan||{}).forEach(f=>{ moves[f]={to:G.plan[f].to, comp:G.plan[f].comp}; });
+    Net.roomRef().child('orders/'+Net.seat).set({ ready:true, log:this.log||[], moves:moves, at:firebase.database.ServerValue.TIMESTAMP });
+    const c=$('count'); if(c){ c.textContent='Esperando a los demás reyes…'; c.style.transform='translateY(0)'; }
+  },
+  onOrders(orders){
+    if(Net.seat!=='W' || this._resolving || !this.snap) return;     // solo el host resuelve
+    const alive=(this.snap.alive||['W','B','G']); const ai=(this.snap.ai||'').split('').filter(Boolean);
+    const needed=alive.filter(s=>!ai.includes(s));
+    if(!needed.length || !needed.every(s=>orders && orders[s] && orders[s].ready)) return;
+    this._resolving=true; this.hostResolve(orders||{});
+  },
+  rebuild(s){
+    G.regions=MAP.regions.map((rd,i)=>{ const d=(s.regions&&s.regions[i])||{};
+      return {owner:(d.o==null?null:d.o),grade:d.g||0,pop:d.p||0,inf:d.i||0,arq:d.a||0,cat:d.c||0,intel:d.I||{},rica:!!d.R,unrest:!!d.U}; });
+    G._gold=Object.assign({},s.gold||{}); G.alive=(s.alive||['W','B','G']).slice();
+    G.dom=Object.assign({},s.dom||{}); G.current='W'; G.ai=(s.ai||'').split('').filter(Boolean); G.aiSeats=G.ai.slice();
+  },
+  applyLog(seat,e){
+    const r=G.regions[e.id]; if(!r) return;
+    if(e.t==='rec' && r.owner===seat){ const u=(e.unit==='arq'||e.unit==='cat')?e.unit:'inf'; r[u]+=Math.max(0,e.n|0); G._gold[seat]=Math.max(0,(G._gold[seat]||0)-(e.cost|0)); }
+    else if(e.t==='up' && r.owner===seat && r.grade<2){ r.grade++; r.pop=Math.min(P.POB_MAX[r.grade], Math.max(r.pop, Math.round(P.POB_MAX[r.grade]*0.55))); G._gold[seat]=Math.max(0,(G._gold[seat]||0)-(e.cost|0)); }
+    else if(e.t==='exp'){ r.intel=r.intel||{}; r.intel[seat]={i:r.inf,a:r.arq,c:r.cat,t:G.turnNo}; G._gold[seat]=Math.max(0,(G._gold[seat]||0)-(e.cost|0)); }
+  },
+  economyNextRound(news){
+    const warn={};
+    G.alive.forEach(k=>{
+      const ord=checkOrder(k);
+      (ord.subl||[]).forEach(i=>news.push(`${nombreReg(i)} se subleva (reino ${KING_LABEL[k]})`));
+      if((ord.inq||[]).length) warn[k]=ord.inq.map(i=>`${nombreReg(i)} inquieta · refuérzala`);
+      let renta=0,mant=0;
+      G.regions.forEach(r=>{ if(r.owner===k){ r.pop=Math.min(P.POB_MAX[r.grade], r.pop+P.CREC[r.grade]);
+        renta+=P.RENTA[r.grade]+(r.rica?P.RENTA_RICA:0); mant+=r.inf*P.MANT.inf+r.arq*P.MANT.arq+r.cat*P.MANT.cat; } });
+      if(!G._gold) G._gold={}; if(G._gold[k]==null) G._gold[k]=P.ORO_INICIAL;
+      G._gold[k]=Math.max(0, G._gold[k]+Math.round(renta-mant));
+    });
+    if(!G.dom) G.dom={}; const need=Math.ceil(P.DOM_PCT*G.regions.length);
+    for(const k of G.alive){ const regs=G.regions.filter(r=>r.owner===k).length; G.dom[k]=(regs>=need)?(G.dom[k]||0)+1:0; }
+    return warn;
+  },
+  hostResolve(orders){
+    this.rebuild(this.snap);
+    const alive=G.alive.slice(); const ai=(this.snap.ai||'').split('').filter(Boolean);
+    const before=G.regions.map(r=>r.owner); let all=[]; this._prevOwners=before;
+    ['W','B','G'].forEach(seat=>{
+      if(!alive.includes(seat)) return;
+      if(ai.includes(seat)){ aiRecruitRound(seat); all=all.concat(aiPlanOrders(seat)); }
+      else { const o=orders[seat]||{}; (o.log||[]).forEach(e=>this.applyLog(seat,e));
+        const mv=o.moves||{}; Object.keys(mv).forEach(f=>all.push({king:seat, from:+f, to:mv[f].to, comp:mv[f].comp})); }
+    });
+    const INFO={}; resolveSimTurn(all, INFO);
+    const news=[]; G.regions.forEach((r,i)=>{ if(r.owner!==before[i]) news.push(`${r.owner?KING_LABEL[r.owner]:'Nadie'} toma ${nombreReg(i)}`); });
+    let ended=null, reason='', warn={};
+    if(G.alive.length<=1){ ended=G.alive[0]||null; reason='unico'; }
+    if(ended===null){ warn=this.economyNextRound(news);
+      for(const k of G.alive){ if((G.dom[k]||0)>=P.DOM_TURNS){ ended=k; reason='dominio'; break; } } }
+    G.turnNo=(G.turnNo||1)+1; this.snap=netSerialize();
+    const upd={ state:this.snap, turnNo:G.turnNo, orders:null, report:{ seq:G.turnNo, news:news, warn:warn } };
+    if(ended!==null || G.alive.length<=1){ upd.status='ended'; upd.winner=ended; upd.endReason=reason; }
+    Net.roomRef().update(upd).then(()=>{ this._resolving=false; }).catch(()=>{ this._resolving=false; });
   }
 };
 function roomClosed(){
@@ -2003,7 +2121,7 @@ window.addEventListener('load', ()=>{
   setTimeout(()=>{ const s=$('app-splash'); s.classList.add('hiding'); setTimeout(()=>s.style.display='none',650); }, 1400);
 });
 (async function showVersion(){
-  let v='reyes-v58';
+  let v='reyes-v59';
   try{ if('caches' in window){ const keys=await caches.keys(); const k=keys.find(x=>/^reyes-v/.test(x)); if(k)v=k; } }catch(e){}
   $('version-label').textContent=v.replace('reyes-','').toUpperCase()+' · SOCRAM GAMES';
 })();
