@@ -1819,7 +1819,7 @@ $('aisel').onclick=e=>{ const o=e.target.closest('.opt'); if(!o||+o.dataset.ai!=
 $('setup-start').onclick=()=>{ Audio_.tap(); $('setup-overlay').classList.remove('show'); newGame(3, pendingAI); };
 $('setup-cancel').onclick=()=>$('setup-overlay').classList.remove('show');
 function gotoMenu(){ aiBusy=false; clearSave(); showScreen('screen-menu'); $('curtain').classList.remove('show'); $('endturn').classList.add('hidden'); closeSheet(); Music.play('intro'); }
-$('btn-menu').onclick=()=>{ if(confirm('¿Abandonar la partida y volver al menú?')){ gotoMenu(); } };
+$('btn-menu').onclick=()=>{ if(confirm('¿Abandonar la partida y volver al menú?')){ if(G&&G.online){ try{Net.leaveGame();}catch(e){} Online.started=false; Online.stopCountdown(); } gotoMenu(); } };
 $('end-rematch').onclick=()=>{ $('end-overlay').classList.remove('show'); newGame(G.num, (G.ai||[]).length); };
 $('end-menu').onclick=()=>{ $('end-overlay').classList.remove('show'); gotoMenu(); };
 
@@ -1855,7 +1855,7 @@ const Net = {
     const seats={ W:{id:this.cid,name:name}, B:{open:true}, G:{open:true} };
     if(mode==='2h1ai') seats.G={ai:true};
     await this.roomRef(code).set({ host:this.cid, createdAt:firebase.database.ServerValue.TIMESTAMP, status:'lobby', mode:mode, turnNo:0, seats:seats });
-    this.code=code; this.seat='W'; this._bind(); this._listen(); return code;
+    this.code=code; this.seat='W'; this._bind(); this._listen(); try{localStorage.setItem('reyes_room',code);}catch(e){} return code;
   },
   async join(code, name){
     if(!this.init()) throw 'sin-conexion';
@@ -1864,12 +1864,12 @@ const Net = {
     if(!snap.exists()) throw 'no-existe';
     const room=snap.val(); let mine=null;
     ['W','B','G'].forEach(s=>{ if(room.seats&&room.seats[s]&&room.seats[s].id===this.cid) mine=s; });
-    if(mine){ this.code=code; this.seat=mine; this._bind(); this._listen(); return mine; }   // reconexión
+    if(mine){ this.code=code; this.seat=mine; if(room.status==='lobby') this._bind(); this._listen(); try{localStorage.setItem('reyes_room',code);}catch(e){} return mine; }   // reconexión
     if(room.status!=='lobby') throw 'en-curso';
     for(const s of ['W','B','G']){
       const res=await this.roomRef(code).child('seats/'+s).transaction(cur=>{ if(cur&&(cur.id||cur.ai)) return; return {id:this.cid,name:name}; });
       const v=res.committed&&res.snapshot.val();
-      if(v&&v.id===this.cid){ this.code=code; this.seat=s; this._bind(); this._listen(); return s; }
+      if(v&&v.id===this.cid){ this.code=code; this.seat=s; this._bind(); this._listen(); try{localStorage.setItem('reyes_room',code);}catch(e){} return s; }
     }
     throw 'llena';
   },
@@ -1880,8 +1880,25 @@ const Net = {
   },
   _listen(){ this.roomRef().on('value', s=>{ this.room=s.val(); if(this._cb) this._cb(this.room); }); },
   onRoom(cb){ this._cb=cb; },
+  markPresence(){   // partida en curso: ya no liberamos el asiento al caer; solo marcamos conectado/desconectado
+    if(!this.code||!this.seat) return;
+    const seatRef=this.roomRef().child('seats/'+this.seat);
+    seatRef.onDisconnect().cancel();
+    seatRef.child('conn').onDisconnect().set(false);
+    seatRef.child('conn').set(true);
+  },
   async setSeatAI(seat, ai){ await this.roomRef().child('seats/'+seat).set(ai?{ai:true}:{open:true}); },
   async start(){ this.roomRef().onDisconnect().cancel(); await this.roomRef().child('status').set('playing'); },  // ya no se borra al desconectar
+  async leaveGame(){   // abandono deliberado a media partida
+    if(!this.code||!this.seat) return; const r=this.roomRef(); const seat=this.seat;
+    try{
+      if(seat==='W'){ await r.update({ status:'ended', winner:null, endReason:'host-fue' }); }  // sin anfitrión no hay árbitro → fin
+      else { const sr=r.child('seats/'+seat); sr.child('conn').onDisconnect().cancel(); await sr.set({ai:true}); }  // su trono pasa a IA
+      r.off();
+    }catch(e){}
+    try{localStorage.removeItem('reyes_room');}catch(e){}
+    this.code=null; this.seat=null; this.room=null; this._cb=null;
+  },
   async leave(){
     if(!this.code) return; const r=this.roomRef();
     try{ if(this.seat==='W'){ r.onDisconnect().cancel(); await r.remove(); }
@@ -1922,6 +1939,7 @@ function renderOnlineChoice(){
     try{ Net.onRoom(r=>{ if(r) renderLobby(r); else roomClosed(); }); await Net.join($('ol-code').value, nameOf()); }
     catch(e){ olMsg(NET_ERR[e]||('Error: '+e)); } };
   $('ol-cancel').onclick=()=>{ $('online-overlay').classList.remove('show'); };
+  try{ const last=localStorage.getItem('reyes_room'); if(last){ $('ol-code').value=last; olMsg('Sala reciente: pulsa Unirse para reconectar.'); } }catch(e){}
   if(!Net.available()) olMsg('Falta la config de Firebase (pégala en el código) o no hay red.');
 }
 
@@ -1966,7 +1984,9 @@ function netBuild(s, seat){   // reconstruye G para planificar como 'seat'
   showScreen('screen-game'); Music.play('game');
   $('endturn').classList.remove('hidden'); $('endturn').textContent='Listo ▸';
   const c=$('count'); if(c) c.style.transform='translateY(120%)';
-  Online.log=[]; Online._submitted=false; Online.stopCountdown();
+  Online.log=[]; Online._submitted=false; Online._deadlineSet=false;
+  if(Online._dlTimer){ clearTimeout(Online._dlTimer); Online._dlTimer=null; }
+  Online.stopCountdown();
 }
 function netWaitShow(t){ const e=$('netwait'); if(!e) return; e.textContent=t; e.style.transform='translateX(-50%) translateY(0)'; }
 function netWaitHide(){ const e=$('netwait'); if(!e) return; e.style.transform='translateX(-50%) translateY(-220%)'; }
@@ -2011,20 +2031,29 @@ const Online = {
   enter(room){
     if(!room) return; this.room=room;
     if(!this.started){
-      if(room.host===Net.cid){                          // ── HOST = Blanco: genera y emite ──
+      if(room.host===Net.cid){                          // ── HOST = Blanco ──
         this.started=true;
-        const aiSeats=['W','B','G'].filter(s=>room.seats[s]&&room.seats[s].ai);
-        newGame(3, aiSeats.length);
-        G.online=true; G.seat='W'; G.host=true; G.aiSeats=aiSeats;
-        this.snap=netSerialize(); this._turn=1; this.log=[];
-        Net.roomRef().child('state').set(this.snap);
         Net.roomRef().child('orders').on('value', sn=>this.onOrders(sn.val()));
-        planCurtain('W');
+        if(room.state){                                 // RECONEXIÓN: reanudar, NO regenerar
+          this.snap=room.state; this._turn=room.turnNo;
+          netBuild(room.state, 'W'); Net.markPresence();
+          if(!G.alive.includes('W')){ showOnlineDefeat(); return; }
+          if(room.status==='ended'){ showOnlineEnd(room.winner||null,'W'); return; }
+          planCurtain('W'); this.resumeDeadline(room);
+        } else {                                        // arranque fresco
+          const aiSeats=['W','B','G'].filter(s=>room.seats[s]&&room.seats[s].ai);
+          newGame(3, aiSeats.length);
+          G.online=true; G.seat='W'; G.host=true; G.aiSeats=aiSeats;
+          this.snap=netSerialize(); this._turn=1; this.log=[];
+          Net.roomRef().child('state').set(this.snap); Net.markPresence();
+          planCurtain('W');
+        }
       } else {                                          // ── INVITADO ──
         if(!room.state) return;                         // espera a que el host emita
-        this.started=true; this._turn=room.turnNo; netBuild(room.state, Net.seat);
+        this.started=true; this._turn=room.turnNo; netBuild(room.state, Net.seat); Net.markPresence();
         if(!G.alive.includes(Net.seat)){ showOnlineDefeat(); return; }
-        planCurtain(Net.seat);
+        if(room.status==='ended'){ showOnlineEnd(room.winner||null, Net.seat); return; }
+        planCurtain(Net.seat); this.resumeDeadline(room);
       }
       return;
     }
@@ -2070,16 +2099,24 @@ const Online = {
   onOrders(orders){
     if(Net.seat!=='W' || this._resolving || !this.snap) return;     // solo el host resuelve
     this._lastOrders=orders||{};
-    const alive=(this.snap.alive||['W','B','G']); const ai=(this.snap.ai||'').split('').filter(Boolean);
-    const needed=alive.filter(s=>!ai.includes(s));                  // asientos HUMANOS vivos (la IA no cuenta)
+    const seats=(this.room&&this.room.seats)||{};
+    const alive=(this.snap.alive||['W','B','G']);
+    // humanos VIVOS y CONECTADOS (la IA y los caídos no bloquean la ronda)
+    const needed=alive.filter(s=>{ const st=seats[s]||{}; return st.id && !st.ai && st.conn!==false; });
     if(!needed.length) return;
     const ready=needed.filter(s=>orders && orders[s] && orders[s].ready).length;
-    if(ready>=1 && !this._deadlineSet){                             // primer humano listo → cuenta atrás de 20 s
+    if(ready>=1 && !this._deadlineSet && !(this.room&&this.room.deadline)){   // primer humano listo → cuenta atrás 20 s
       this._deadlineSet=true;
       Net.roomRef().child('deadline').set(Date.now()+20000);
       this._dlTimer=setTimeout(()=>this.fire(), 20700);            // por si alguien no auto-envía (desconexión)
     }
-    if(ready>=needed.length) this.fire();                           // todos los humanos listos → ya
+    if(ready>=needed.length) this.fire();                           // todos los conectados listos → ya
+  },
+  resumeDeadline(room){   // al (re)entrar a media ronda con cuenta atrás ya en marcha
+    if(!room.deadline) return;
+    this.startCountdown(room.deadline);
+    if(Net.seat==='W' && !this._dlTimer){ this._deadlineSet=true;
+      this._dlTimer=setTimeout(()=>this.fire(), Math.max(400,(room.deadline-Date.now())+700)); }
   },
   fire(){
     if(this._resolving || !this.snap) return; this._resolving=true;
@@ -2116,12 +2153,14 @@ const Online = {
   },
   hostResolve(orders){
     this.rebuild(this.snap);
-    const alive=G.alive.slice(); const ai=(this.snap.ai||'').split('').filter(Boolean);
+    const seats=(this.room&&this.room.seats)||{};
+    const alive=G.alive.slice();
     const before=G.regions.map(r=>r.owner); let all=[]; this._prevOwners=before;
     ['W','B','G'].forEach(seat=>{
       if(!alive.includes(seat)) return;
-      if(ai.includes(seat)){ aiRecruitRound(seat); all=all.concat(aiPlanOrders(seat)); }
-      else { const o=orders[seat]||{}; (o.log||[]).forEach(e=>this.applyLog(seat,e));
+      const st=seats[seat]||{};
+      if(st.ai){ aiRecruitRound(seat); all=all.concat(aiPlanOrders(seat)); }   // trono IA (o humano que abandonó)
+      else { const o=orders[seat]||{}; (o.log||[]).forEach(e=>this.applyLog(seat,e));   // humano: si no envió (caído) → aguanta
         const mv=o.moves||{}; Object.keys(mv).forEach(f=>all.push({king:seat, from:+f, to:mv[f].to, comp:mv[f].comp})); }
     });
     const INFO={}; resolveSimTurn(all, INFO);
@@ -2154,7 +2193,7 @@ window.addEventListener('load', ()=>{
   setTimeout(()=>{ const s=$('app-splash'); s.classList.add('hiding'); setTimeout(()=>s.style.display='none',650); }, 1400);
 });
 (async function showVersion(){
-  let v='reyes-v62';
+  let v='reyes-v63';
   try{ if('caches' in window){ const keys=await caches.keys(); const k=keys.find(x=>/^reyes-v/.test(x)); if(k)v=k; } }catch(e){}
   $('version-label').textContent=v.replace('reyes-','').toUpperCase()+' · SOCRAM GAMES';
 })();
